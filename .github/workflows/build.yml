@@ -426,4 +426,703 @@ jobs:
           import java.util.concurrent.Executors;
 
           public class SolanaWallpaperService extends WallpaperService {
-             
+              @Override
+              public Engine onCreateEngine() {
+                  return new SolanaEngine();
+              }
+
+              private class SolanaEngine extends Engine {
+                  private final Handler handler = new Handler(Looper.getMainLooper());
+                  private final ExecutorService networkExecutor = Executors.newSingleThreadExecutor();
+                  private boolean isEngineVisible = false;
+                  private float screenW = 0f;
+                  private float screenH = 0f;
+                  private float dp = 1f;
+
+                  private float currentSol = 1f;
+                  private float animatedSol = 1f;
+                  private float targetGoalSol = 100f;
+                  private boolean useIdr = true;
+
+                  private float solUsdPrice = 0f;
+                  private float solIdrPrice = 0f;
+                  private float solChange24h = 0f;
+                  private float usdToIdrRate = 16300f;
+                  private long lastPriceFetchTime = 0L;
+                  private boolean isFetchingPrice = false;
+
+                  private long lastInteractionTime = System.currentTimeMillis();
+                  private float uiAlphaMultiplier = 1f;
+
+                  private final RectF btnMinusRect = new RectF();
+                  private final RectF btnConfigRect = new RectF();
+                  private final RectF btnPlusRect = new RectF();
+                  private final RectF currencyCardRect = new RectF();
+                  private final RectF tickerBadgeRect = new RectF();
+
+                  private float downX = 0f;
+                  private float downY = 0f;
+                  private float touchX = -1000f;
+                  private float touchY = -1000f;
+                  private boolean isTouching = false;
+
+                  private final List<Particle> particles = new ArrayList<>();
+                  private final List<Ripple> ripples = new ArrayList<>();
+                  private final Paint paint = new Paint(Paint.ANTI_ALIAS_FLAG);
+                  private final Paint textPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
+                  private final Random random = new Random();
+                  private final SimpleDateFormat clockFmt = new SimpleDateFormat("HH:mm", Locale.getDefault());
+                  private final SimpleDateFormat dateFmt = new SimpleDateFormat("EEE, dd MMM yyyy", new Locale("id", "ID"));
+
+                  private class Particle {
+                      float x, y, vx, vy, radius;
+                      int alpha, color;
+                  }
+
+                  private class Ripple {
+                      float x, y, radius, maxRadius;
+                      int alpha, color;
+                  }
+
+                  private final Runnable drawRunner = new Runnable() {
+                      @Override
+                      public void run() {
+                          drawFrame();
+                          if (isEngineVisible) {
+                              handler.postDelayed(this, 16L);
+                          }
+                      }
+                  };
+
+                  @Override
+                  public void onCreate(SurfaceHolder surfaceHolder) {
+                      super.onCreate(surfaceHolder);
+                      setTouchEventsEnabled(true);
+                      dp = getResources().getDisplayMetrics().density;
+                      loadPreferences();
+                  }
+
+                  private void loadPreferences() {
+                      SharedPreferences prefs = getSharedPreferences("solana_wp_prefs", Context.MODE_PRIVATE);
+                      targetGoalSol = Math.max(1f, prefs.getFloat("sol_goal_target", 100.0f));
+                      currentSol = Math.max(0f, Math.min(targetGoalSol, prefs.getFloat("sol_goal_amount", 1.0f)));
+                      useIdr = prefs.getBoolean("use_idr", true);
+                      solUsdPrice = prefs.getFloat("cached_sol_usd", 0f);
+                      solIdrPrice = prefs.getFloat("cached_sol_idr", 0f);
+                      solChange24h = prefs.getFloat("cached_sol_change", 0f);
+                  }
+
+                  @Override
+                  public void onVisibilityChanged(boolean visible) {
+                      this.isEngineVisible = visible;
+                      if (visible) {
+                          loadPreferences();
+                          lastInteractionTime = System.currentTimeMillis();
+                          fetchLiveMarketData(false);
+                          handler.removeCallbacks(drawRunner);
+                          handler.post(drawRunner);
+                      } else {
+                          handler.removeCallbacks(drawRunner);
+                      }
+                  }
+
+                  @Override
+                  public void onSurfaceChanged(SurfaceHolder holder, int format, int width, int height) {
+                      super.onSurfaceChanged(holder, format, width, height);
+                      screenW = width;
+                      screenH = height;
+                      initParticles();
+                  }
+
+                  private void initParticles() {
+                      particles.clear();
+                      for (int i = 0; i < 32; i++) {
+                          Particle p = new Particle();
+                          p.x = random.nextFloat() * screenW;
+                          p.y = random.nextFloat() * screenH;
+                          p.vx = (random.nextFloat() - 0.5f) * 0.35f * dp;
+                          p.vy = -(random.nextFloat() * 0.45f + 0.15f) * dp;
+                          p.radius = (random.nextFloat() * 2.0f + 0.8f) * dp;
+                          p.alpha = random.nextInt(140) + 45;
+                          p.color = random.nextBoolean() ? Color.parseColor("#9945FF") : Color.parseColor("#14F195");
+                          particles.add(p);
+                      }
+                  }
+
+                  private void spawnRipple(float x, float y, int color) {
+                      Ripple r = new Ripple();
+                      r.x = x;
+                      r.y = y;
+                      r.radius = 4f * dp;
+                      r.maxRadius = 75f * dp;
+                      r.alpha = 200;
+                      r.color = color;
+                      ripples.add(r);
+                  }
+
+                  private void fetchLiveMarketData(boolean force) {
+                      long now = System.currentTimeMillis();
+                      if (isFetchingPrice) return;
+                      if (!force && (now - lastPriceFetchTime < 30000L)) return;
+
+                      isFetchingPrice = true;
+                      lastPriceFetchTime = now;
+
+                      networkExecutor.execute(() -> {
+                          boolean success = false;
+                          // 1. Try CoinGecko (Directly provides USD, IDR, and 24h change)
+                          try {
+                              URL url = new URL("https://api.coingecko.com/api/v3/simple/price?ids=solana&vs_currencies=usd,idr&include_24hr_change=true");
+                              HttpURLConnection conn = (HttpURLConnection) url.openConnection();
+                              conn.setConnectTimeout(5000);
+                              conn.setReadTimeout(5000);
+                              conn.setRequestProperty("Accept", "application/json");
+                              if (conn.getResponseCode() == 200) {
+                                  BufferedReader reader = new BufferedReader(new InputStreamReader(conn.getInputStream()));
+                                  StringBuilder sb = new StringBuilder();
+                                  String line;
+                                  while ((line = reader.readLine()) != null) sb.append(line);
+                                  reader.close();
+
+                                  JSONObject root = new JSONObject(sb.toString());
+                                  JSONObject sol = root.optJSONObject("solana");
+                                  if (sol != null) {
+                                      float usd = (float) sol.optDouble("usd", 0.0);
+                                      float idr = (float) sol.optDouble("idr", 0.0);
+                                      float chg = (float) sol.optDouble("usd_24h_change", 0.0);
+                                      if (usd > 0f) {
+                                          solUsdPrice = usd;
+                                          solIdrPrice = (idr > 0f) ? idr : (usd * usdToIdrRate);
+                                          if (idr > 0f) usdToIdrRate = idr / usd;
+                                          solChange24h = chg;
+                                          success = true;
+                                      }
+                                  }
+                              }
+                          } catch (Exception ignored) {}
+
+                          // 2. Fallback to Binance Vision Public API if CoinGecko is rate-limited
+                          if (!success) {
+                              try {
+                                  URL url = new URL("https://data-api.binance.vision/api/v3/ticker/24hr?symbol=SOLUSDT");
+                                  HttpURLConnection conn = (HttpURLConnection) url.openConnection();
+                                  conn.setConnectTimeout(5000);
+                                  conn.setReadTimeout(5000);
+                                  if (conn.getResponseCode() == 200) {
+                                      BufferedReader reader = new BufferedReader(new InputStreamReader(conn.getInputStream()));
+                                      StringBuilder sb = new StringBuilder();
+                                      String line;
+                                      while ((line = reader.readLine()) != null) sb.append(line);
+                                      reader.close();
+
+                                      JSONObject obj = new JSONObject(sb.toString());
+                                      float usd = (float) obj.optDouble("lastPrice", 0.0);
+                                      float chg = (float) obj.optDouble("priceChangePercent", 0.0);
+                                      if (usd > 0f) {
+                                          solUsdPrice = usd;
+                                          solIdrPrice = usd * usdToIdrRate;
+                                          solChange24h = chg;
+                                          success = true;
+                                      }
+                                  }
+                              } catch (Exception ignored) {}
+                          }
+
+                          if (success) {
+                              SharedPreferences prefs = getSharedPreferences("solana_wp_prefs", Context.MODE_PRIVATE);
+                              prefs.edit()
+                                  .putFloat("cached_sol_usd", solUsdPrice)
+                                  .putFloat("cached_sol_idr", solIdrPrice)
+                                  .putFloat("cached_sol_change", solChange24h)
+                                  .apply();
+                          }
+                          isFetchingPrice = false;
+                      });
+                  }
+
+                  @Override
+                  public void onTouchEvent(MotionEvent event) {
+                      if (event == null) return;
+                      int action = event.getAction();
+                      lastInteractionTime = System.currentTimeMillis();
+
+                      if (action == MotionEvent.ACTION_DOWN) {
+                          downX = event.getX();
+                          downY = event.getY();
+                          touchX = downX;
+                          touchY = downY;
+                          isTouching = true;
+                          spawnRipple(downX, downY, Color.parseColor("#00C2FF"));
+                      } else if (action == MotionEvent.ACTION_MOVE) {
+                          touchX = event.getX();
+                          touchY = event.getY();
+                      } else if (action == MotionEvent.ACTION_UP || action == MotionEvent.ACTION_CANCEL) {
+                          isTouching = false;
+                          touchX = -1000f;
+                          touchY = -1000f;
+
+                          if (action == MotionEvent.ACTION_UP) {
+                              double dist = Math.hypot(event.getX() - downX, event.getY() - downY);
+                              if (dist < 16f * dp) {
+                                  float ex = event.getX();
+                                  float ey = event.getY();
+                                  if (btnMinusRect.contains(ex, ey)) {
+                                      adjustSol(-0.5f);
+                                      spawnRipple(ex, ey, Color.parseColor("#9945FF"));
+                                  } else if (btnPlusRect.contains(ex, ey)) {
+                                      adjustSol(0.5f);
+                                      spawnRipple(ex, ey, Color.parseColor("#14F195"));
+                                  } else if (btnConfigRect.contains(ex, ey)) {
+                                      Intent intent = new Intent(SolanaWallpaperService.this, MainActivity.class);
+                                      intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+                                      startActivity(intent);
+                                  } else if (currencyCardRect.contains(ex, ey)) {
+                                      useIdr = !useIdr;
+                                      getSharedPreferences("solana_wp_prefs", Context.MODE_PRIVATE)
+                                          .edit().putBoolean("use_idr", useIdr).apply();
+                                      spawnRipple(ex, ey, Color.parseColor("#14F195"));
+                                  } else if (tickerBadgeRect.contains(ex, ey)) {
+                                      fetchLiveMarketData(true);
+                                      spawnRipple(ex, ey, Color.parseColor("#00C2FF"));
+                                  }
+                              }
+                          }
+                      }
+                      super.onTouchEvent(event);
+                  }
+
+                  private void adjustSol(float delta) {
+                      SharedPreferences prefs = getSharedPreferences("solana_wp_prefs", Context.MODE_PRIVATE);
+                      currentSol = Math.round((currentSol + delta) * 100f) / 100f;
+                      currentSol = Math.max(0f, Math.min(targetGoalSol, currentSol));
+                      prefs.edit().putFloat("sol_goal_amount", currentSol).apply();
+                  }
+
+                  private String getRankTitle(float pct) {
+                      if (pct >= 100f) return "TIER: 100 SOL MASTER";
+                      if (pct >= 80f) return "TIER: SOLANA WHALE";
+                      if (pct >= 50f) return "TIER: SHARK SNIPER";
+                      if (pct >= 25f) return "TIER: DOLPHIN TRADER";
+                      if (pct >= 10f) return "TIER: CRAB HUSTLER";
+                      return "TIER: SHRIMP ACCUMULATOR";
+                  }
+
+                  private String formatRupiah(double amount) {
+                      NumberFormat nf = NumberFormat.getNumberInstance(new Locale("id", "ID"));
+                      nf.setMaximumFractionDigits(0);
+                      return "Rp " + nf.format(Math.round(amount));
+                  }
+
+                  private String formatRupiahShort(double amount) {
+                      if (amount >= 1_000_000_000) {
+                          return String.format(new Locale("id", "ID"), "Rp %.2f M", amount / 1_000_000_000.0);
+                      } else if (amount >= 1_000_000) {
+                          return String.format(new Locale("id", "ID"), "Rp %.1f Jt", amount / 1_000_000.0);
+                      }
+                      return formatRupiah(amount);
+                  }
+
+                  private String formatUsd(double amount) {
+                      return String.format(Locale.US, "$%,.2f", amount);
+                  }
+
+                  private void drawFrame() {
+                      SurfaceHolder holder = getSurfaceHolder();
+                      if (holder == null) return;
+                      Canvas canvas = null;
+                      try {
+                          canvas = holder.lockCanvas();
+                          if (canvas != null) {
+                              renderWallpaper(canvas);
+                          }
+                      } finally {
+                          if (canvas != null) {
+                              try {
+                                  holder.unlockCanvasAndPost(canvas);
+                              } catch (Exception ignored) {}
+                          }
+                      }
+                  }
+
+                  private void renderWallpaper(Canvas canvas) {
+                      long now = System.currentTimeMillis();
+                      if (now - lastPriceFetchTime > 30000L) {
+                          fetchLiveMarketData(false);
+                      }
+
+                      animatedSol += (currentSol - animatedSol) * 0.15f;
+
+                      // Auto-dim buttons after 5 seconds of inactivity
+                      float targetUiAlpha = (now - lastInteractionTime > 5000L) ? 0.22f : 1.0f;
+                      uiAlphaMultiplier += (targetUiAlpha - uiAlphaMultiplier) * 0.08f;
+
+                      // 1. Background #050508 + Ambient Center Aura
+                      canvas.drawColor(Color.parseColor("#050508"));
+
+                      float cx = screenW / 2f;
+                      float cy = screenH / 2f;
+                      float contentW = Math.min(screenW * 0.86f, 360f * dp);
+
+                      paint.setStyle(Paint.Style.FILL);
+                      paint.setColor(Color.WHITE);
+                      paint.setAlpha(255);
+                      paint.setShader(new RadialGradient(
+                          cx, cy - 20f * dp, 220f * dp,
+                          new int[]{Color.parseColor("#229945FF"), Color.parseColor("#1114F195"), Color.TRANSPARENT},
+                          new float[]{0f, 0.55f, 1f},
+                          Shader.TileMode.CLAMP
+                      ));
+                      canvas.drawCircle(cx, cy - 20f * dp, 220f * dp, paint);
+                      paint.setShader(null);
+
+                      // 2. Ambient Particles & Interactive Constellation Lines
+                      for (Particle p : particles) {
+                          p.x += p.vx;
+                          p.y += p.vy;
+                          if (p.y < -10f * dp) p.y = screenH + 10f * dp;
+                          if (p.x < -10f * dp) p.x = screenW + 10f * dp;
+                          if (p.x > screenW + 10f * dp) p.x = -10f * dp;
+
+                          paint.setStyle(Paint.Style.FILL);
+                          paint.setColor(p.color);
+                          paint.setAlpha(p.alpha);
+                          canvas.drawCircle(p.x, p.y, p.radius, paint);
+
+                          if (isTouching) {
+                              float dx = p.x - touchX;
+                              float dy = p.y - touchY;
+                              float dist = (float) Math.hypot(dx, dy);
+                              if (dist < 120f * dp) {
+                                  paint.setColor(Color.parseColor("#14F195"));
+                                  paint.setAlpha((int) ((1f - dist / (120f * dp)) * 120f));
+                                  paint.setStrokeWidth(1f * dp);
+                                  canvas.drawLine(p.x, p.y, touchX, touchY, paint);
+                              }
+                          }
+                      }
+
+                      // 3. Touch Ripples
+                      Iterator<Ripple> it = ripples.iterator();
+                      while (it.hasNext()) {
+                          Ripple r = it.next();
+                          r.radius += 3.2f * dp;
+                          r.alpha -= 8;
+                          if (r.alpha <= 0 || r.radius >= r.maxRadius) {
+                              it.remove();
+                          } else {
+                              paint.setStyle(Paint.Style.STROKE);
+                              paint.setStrokeWidth(1.8f * dp);
+                              paint.setColor(r.color);
+                              paint.setAlpha(r.alpha);
+                              canvas.drawCircle(r.x, r.y, r.radius, paint);
+                          }
+                      }
+                      paint.setStyle(Paint.Style.FILL);
+                      paint.setAlpha(255);
+
+                      // 4. Minimalist Digital Clock & Date at Top
+                      Date currentDate = new Date(now);
+                      float clockY = cy - 225f * dp;
+                      textPaint.setShader(null);
+                      textPaint.setTypeface(Typeface.create(Typeface.DEFAULT, Typeface.BOLD));
+                      textPaint.setTextAlign(Paint.Align.CENTER);
+                      textPaint.setTextSize(26f * dp);
+                      textPaint.setLetterSpacing(0.12f);
+                      textPaint.setColor(Color.parseColor("#E6FFFFFF"));
+                      canvas.drawText(clockFmt.format(currentDate), cx, clockY, textPaint);
+
+                      textPaint.setTypeface(Typeface.DEFAULT);
+                      textPaint.setTextSize(10.5f * dp);
+                      textPaint.setLetterSpacing(0.18f);
+                      textPaint.setColor(Color.parseColor("#80FFFFFF"));
+                      canvas.drawText(dateFmt.format(currentDate).toUpperCase(Locale.getDefault()), cx, clockY + 16f * dp, textPaint);
+
+                      // 5. Animated Floating Solana Logo
+                      float floatOffset = (float) Math.sin(now / 900.0) * 5f * dp;
+                      float logoTop = cy - 165f * dp + floatOffset;
+                      float barW = 44f * dp;
+                      float barH = 7f * dp;
+                      float barGap = 5f * dp;
+
+                      paint.setColor(Color.WHITE);
+                      paint.setAlpha(255);
+                      paint.setShader(new LinearGradient(
+                          cx - barW / 2f, 0f, cx + barW / 2f, 0f,
+                          new int[]{Color.parseColor("#9945FF"), Color.parseColor("#00C2FF"), Color.parseColor("#14F195")},
+                          null,
+                          Shader.TileMode.CLAMP
+                      ));
+                      for (int i = 0; i < 3; i++) {
+                          float shift = (i == 1) ? -2.5f * dp : 2.5f * dp;
+                          float top = logoTop + i * (barH + barGap);
+                          RectF rect = new RectF(cx - barW / 2f + shift, top, cx + barW / 2f + shift, top + barH);
+                          canvas.drawRoundRect(rect, 4f * dp, 4f * dp, paint);
+                      }
+                      paint.setShader(null);
+
+                      // 6. Title "ROAD TO X SOL" + Pulse Dot
+                      float titleY = cy - 102f * dp;
+                      String goalTitle = (targetGoalSol % 1f == 0f)
+                          ? "ROAD TO " + ((int) targetGoalSol) + " SOL"
+                          : String.format(Locale.US, "ROAD TO %.1f SOL", targetGoalSol);
+                      textPaint.setTypeface(Typeface.create(Typeface.DEFAULT, Typeface.BOLD));
+                      textPaint.setTextSize(15f * dp);
+                      textPaint.setLetterSpacing(0.18f);
+                      textPaint.setColor(Color.WHITE);
+                      canvas.drawText(goalTitle, cx - 7f * dp, titleY, textPaint);
+
+                      float titleWidth = textPaint.measureText(goalTitle);
+                      int pulseAlpha = (int) ((Math.sin(now / 220.0) * 0.35 + 0.65) * 255);
+                      paint.setColor(Color.parseColor("#14F195"));
+                      paint.setAlpha(Math.max(60, Math.min(255, pulseAlpha)));
+                      canvas.drawCircle(cx + titleWidth / 2f + 4f * dp, titleY - 5f * dp, 3.8f * dp, paint);
+                      paint.setAlpha(255);
+
+                      // 7. Live SOL Price Ticker Badge
+                      float tickerTop = cy - 88f * dp;
+                      float tickerH = 24f * dp;
+                      String tickerText;
+                      if (solUsdPrice > 0f) {
+                          String sign = (solChange24h >= 0f) ? "+" : "";
+                          tickerText = String.format(Locale.US, "SOL $%.2f (%s%.2f%%)", solUsdPrice, sign, solChange24h);
+                      } else {
+                          tickerText = isFetchingPrice ? "MEMUAT HARGA LIVE..." : "KETUK UNTUK CEK HARGA SOL";
+                      }
+                      textPaint.setTextSize(10.5f * dp);
+                      textPaint.setLetterSpacing(0.06f);
+                      float tickerW = textPaint.measureText(tickerText) + 24f * dp;
+                      tickerBadgeRect.set(cx - tickerW / 2f, tickerTop, cx + tickerW / 2f, tickerTop + tickerH);
+
+                      paint.setColor(Color.parseColor("#1400C2FF"));
+                      canvas.drawRoundRect(tickerBadgeRect, 12f * dp, 12f * dp, paint);
+                      paint.setStyle(Paint.Style.STROKE);
+                      paint.setStrokeWidth(1f * dp);
+                      paint.setColor(solChange24h >= 0f ? Color.parseColor("#4514F195") : Color.parseColor("#45FF4D6D"));
+                      canvas.drawRoundRect(tickerBadgeRect, 12f * dp, 12f * dp, paint);
+                      paint.setStyle(Paint.Style.FILL);
+
+                      textPaint.setColor(solUsdPrice > 0f
+                          ? (solChange24h >= 0f ? Color.parseColor("#14F195") : Color.parseColor("#FF6B81"))
+                          : Color.parseColor("#00C2FF"));
+                      canvas.drawText(tickerText, cx, tickerBadgeRect.centerY() + 3.8f * dp, textPaint);
+
+                      // 8. Progress Box & Track
+                      float boxTop = cy - 52f * dp;
+                      float boxH = 36f * dp;
+                      RectF boxRect = new RectF(cx - contentW / 2f, boxTop, cx + contentW / 2f, boxTop + boxH);
+                      paint.setColor(Color.parseColor("#D910121B"));
+                      canvas.drawRoundRect(boxRect, 14f * dp, 14f * dp, paint);
+
+                      paint.setStyle(Paint.Style.STROKE);
+                      paint.setStrokeWidth(1.5f * dp);
+                      paint.setColor(Color.parseColor("#28FFFFFF"));
+                      canvas.drawRoundRect(boxRect, 14f * dp, 14f * dp, paint);
+                      paint.setStyle(Paint.Style.FILL);
+
+                      float pad = 5f * dp;
+                      RectF trackRect = new RectF(boxRect.left + pad, boxRect.top + pad, boxRect.right - pad, boxRect.bottom - pad);
+                      paint.setColor(Color.parseColor("#090A10"));
+                      canvas.drawRoundRect(trackRect, 10f * dp, 10f * dp, paint);
+
+                      // 9. Animated Progress Fill + Shimmer
+                      float progressRatio = Math.max(0f, Math.min(1f, animatedSol / Math.max(1f, targetGoalSol)));
+                      float fillRatio = Math.max(progressRatio, 0.035f);
+                      float fillW = trackRect.width() * fillRatio;
+                      RectF fillRect = new RectF(trackRect.left, trackRect.top, trackRect.left + fillW, trackRect.bottom);
+
+                      canvas.save();
+                      Path clipPath = new Path();
+                      clipPath.addRoundRect(trackRect, 10f * dp, 10f * dp, Path.Direction.CW);
+                      canvas.clipPath(clipPath);
+
+                      float gradShift = ((now % 3000L) / 3000f) * trackRect.width();
+                      paint.setColor(Color.WHITE);
+                      paint.setAlpha(255);
+                      paint.setShader(new LinearGradient(
+                          trackRect.left - gradShift, 0f, trackRect.right + trackRect.width() - gradShift, 0f,
+                          new int[]{
+                              Color.parseColor("#9945FF"),
+                              Color.parseColor("#00C2FF"),
+                              Color.parseColor("#14F195"),
+                              Color.parseColor("#9945FF")
+                          },
+                          null,
+                          Shader.TileMode.REPEAT
+                      ));
+                      canvas.drawRoundRect(fillRect, 10f * dp, 10f * dp, paint);
+
+                      float sweepPhase = (now % 2000L) / 2000f;
+                      float sweepX = fillRect.left - fillW + sweepPhase * (fillW * 3f);
+                      paint.setShader(new LinearGradient(
+                          sweepX, 0f, sweepX + Math.max(fillW * 0.8f, 24f * dp), 0f,
+                          new int[]{Color.TRANSPARENT, Color.parseColor("#AAFFFFFF"), Color.TRANSPARENT},
+                          null,
+                          Shader.TileMode.CLAMP
+                      ));
+                      canvas.drawRoundRect(fillRect, 10f * dp, 10f * dp, paint);
+                      paint.setShader(null);
+                      canvas.restore();
+
+                      // 10. Scale Row & Trader Rank Milestone
+                      float scaleY = boxRect.bottom + 20f * dp;
+                      textPaint.setTypeface(Typeface.create(Typeface.DEFAULT, Typeface.BOLD));
+                      textPaint.setTextSize(11.5f * dp);
+                      textPaint.setLetterSpacing(0.06f);
+
+                      textPaint.setTextAlign(Paint.Align.LEFT);
+                      textPaint.setColor(Color.parseColor("#9945FF"));
+                      canvas.drawText("0 SOL", boxRect.left, scaleY, textPaint);
+
+                      float exactPct = Math.max(0f, Math.min(100f, (currentSol / Math.max(1f, targetGoalSol)) * 100f));
+                      textPaint.setTextAlign(Paint.Align.CENTER);
+                      textPaint.setSize(10f * dp);
+                      textPaint.setColor(Color.parseColor("#00C2FF"));
+                      canvas.drawText(getRankTitle(exactPct), cx, scaleY, textPaint);
+
+                      textPaint.setTextAlign(Paint.Align.RIGHT);
+                      textPaint.setTextSize(11.5f * dp);
+                      textPaint.setColor(Color.parseColor("#14F195"));
+                      String maxLabel = (targetGoalSol % 1f == 0f)
+                          ? ((int) targetGoalSol) + " SOL"
+                          : String.format(Locale.US, "%.1f SOL", targetGoalSol);
+                      canvas.drawText(maxLabel, boxRect.right, scaleY, textPaint);
+
+                      // 11. Current SOL Balance Display
+                      float amountY = scaleY + 52f * dp;
+                      String solText = (currentSol % 1f == 0f)
+                          ? String.format(Locale.US, "%.1f SOL", currentSol)
+                          : String.format(Locale.US, "%.2f SOL", currentSol);
+                      textPaint.setTextAlign(Paint.Align.CENTER);
+                      textPaint.setTypeface(Typeface.create(Typeface.DEFAULT, Typeface.BOLD));
+                      textPaint.setTextSize(38f * dp);
+                      textPaint.setLetterSpacing(-0.02f);
+                      textPaint.setColor(Color.WHITE);
+                      textPaint.setShader(new LinearGradient(
+                          cx - 90f * dp, amountY - 32f * dp, cx + 90f * dp, amountY,
+                          Color.WHITE, Color.parseColor("#14F195"), Shader.TileMode.CLAMP
+                      ));
+                      canvas.drawText(solText, cx, amountY, textPaint);
+                      textPaint.setShader(null);
+
+                      // 12. Interactive IDR / USD Estimation Card (Tap to toggle IDR <-> USD)
+                      float cardTop = amountY + 14f * dp;
+                      float cardH = 48f * dp;
+                      float cardW = Math.min(contentW, 300f * dp);
+                      currencyCardRect.set(cx - cardW / 2f, cardTop, cx + cardW / 2f, cardTop + cardH);
+
+                      paint.setColor(Color.parseColor("#14FFFFFF"));
+                      canvas.drawRoundRect(currencyCardRect, 12f * dp, 12f * dp, paint);
+                      paint.setStyle(Paint.Style.STROKE);
+                      paint.setStrokeWidth(1f * dp);
+                      paint.setColor(Color.parseColor("#2E14F195"));
+                      canvas.drawRoundRect(currencyCardRect, 12f * dp, 12f * dp, paint);
+                      paint.setStyle(Paint.Style.FILL);
+
+                      String mainFiatText;
+                      String targetFiatText;
+                      if (solUsdPrice > 0f) {
+                          if (useIdr) {
+                              double currentIdrVal = currentSol * solIdrPrice;
+                              double goalIdrVal = targetGoalSol * solIdrPrice;
+                              mainFiatText = "≈ " + formatRupiah(currentIdrVal);
+                              targetFiatText = "Target " + maxLabel + ": " + formatRupiahShort(goalIdrVal) + " • Ketuk ganti USD";
+                          } else {
+                              double currentUsdVal = currentSol * solUsdPrice;
+                              double goalUsdVal = targetGoalSol * solUsdPrice;
+                              mainFiatText = "≈ " + formatUsd(currentUsdVal) + " USD";
+                              targetFiatText = "Target " + maxLabel + ": " + formatUsd(goalUsdVal) + " • Ketuk ganti IDR";
+                          }
+                      } else {
+                          mainFiatText = useIdr ? "≈ Rp -- (Menunggu Koneksi)" : "≈ $ -- (Menunggu Koneksi)";
+                          targetFiatText = "Ketuk kotak ini untuk ganti IDR / USD";
+                      }
+
+                      textPaint.setTypeface(Typeface.create(Typeface.DEFAULT, Typeface.BOLD));
+                      textPaint.setTextSize(15f * dp);
+                      textPaint.setLetterSpacing(0.03f);
+                      textPaint.setColor(Color.parseColor("#14F195"));
+                      canvas.drawText(mainFiatText, cx, cardTop + 21f * dp, textPaint);
+
+                      textPaint.setTypeface(Typeface.DEFAULT);
+                      textPaint.setTextSize(10f * dp);
+                      textPaint.setLetterSpacing(0.04f);
+                      textPaint.setColor(Color.parseColor("#99FFFFFF"));
+                      canvas.drawText(targetFiatText, cx, cardTop + 38f * dp, textPaint);
+
+                      // 13. Progress % & Remaining SOL
+                      float progressTextY = currencyCardRect.bottom + 22f * dp;
+                      float remaining = Math.max(0f, targetGoalSol - currentSol);
+                      String subText = String.format(Locale.US, "Progres: %.1f%%  •  Kurang %.2f SOL", exactPct, remaining);
+                      textPaint.setTextSize(12f * dp);
+                      textPaint.setLetterSpacing(0.05f);
+                      textPaint.setColor(Color.parseColor("#B3FFFFFF"));
+                      canvas.drawText(subText, cx, progressTextY, textPaint);
+
+                      // 14. Interactive Action Buttons (-0.5 | ATUR SALDO | +0.5) with Bright Neon Gradient
+                      float btnTop = progressTextY + 22f * dp;
+                      float btnH = 40f * dp;
+                      float stepW = 60f * dp;
+                      float configW = 138f * dp;
+                      float gap = 10f * dp;
+
+                      btnConfigRect.set(cx - configW / 2f, btnTop, cx + configW / 2f, btnTop + btnH);
+                      btnMinusRect.set(btnConfigRect.left - gap - stepW, btnTop, btnConfigRect.left - gap, btnTop + btnH);
+                      btnPlusRect.set(btnConfigRect.right + gap, btnTop, btnConfigRect.right + gap + stepW, btnTop + btnH);
+
+                      int btnAlpha = Math.round(255 * uiAlphaMultiplier);
+
+                      RectF[] stepRects = new RectF[]{btnMinusRect, btnPlusRect};
+                      for (RectF r : stepRects) {
+                          paint.setShader(null);
+                          paint.setStyle(Paint.Style.FILL);
+                          paint.setColor(Color.parseColor("#18FFFFFF"));
+                          paint.setAlpha(Math.round(30 * uiAlphaMultiplier));
+                          canvas.drawRoundRect(r, 10f * dp, 10f * dp, paint);
+
+                          paint.setStyle(Paint.Style.STROKE);
+                          paint.setStrokeWidth(1.2f * dp);
+                          paint.setColor(Color.WHITE);
+                          paint.setAlpha(Math.round(65 * uiAlphaMultiplier));
+                          canvas.drawRoundRect(r, 10f * dp, 10f * dp, paint);
+                      }
+
+                      // Fix: Reset Paint color to pure WHITE and full alpha BEFORE applying shader
+                      paint.setStyle(Paint.Style.FILL);
+                      paint.setColor(Color.WHITE);
+                      paint.setAlpha(btnAlpha);
+                      paint.setShader(new LinearGradient(
+                          btnConfigRect.left, btnConfigRect.top, btnConfigRect.right, btnConfigRect.bottom,
+                          new int[]{Color.parseColor("#9945FF"), Color.parseColor("#00C2FF"), Color.parseColor("#14F195")},
+                          null,
+                          Shader.TileMode.CLAMP
+                      ));
+                      canvas.drawRoundRect(btnConfigRect, 10f * dp, 10f * dp, paint);
+                      paint.setShader(null);
+
+                      float btnTextY = btnTop + btnH / 2f + 4.8f * dp;
+                      textPaint.setTypeface(Typeface.create(Typeface.DEFAULT, Typeface.BOLD));
+                      textPaint.setTextSize(13f * dp);
+                      textPaint.setLetterSpacing(0.02f);
+                      textPaint.setColor(Color.WHITE);
+                      textPaint.setAlpha(btnAlpha);
+                      canvas.drawText("-0.5", btnMinusRect.centerX(), btnTextY, textPaint);
+                      canvas.drawText("+0.5", btnPlusRect.centerX(), btnTextY, textPaint);
+
+                      textPaint.setColor(Color.parseColor("#050508"));
+                      textPaint.setAlpha(btnAlpha);
+                      textPaint.setTextSize(12.5f * dp);
+                      canvas.drawText("ATUR SALDO", btnConfigRect.centerX(), btnTextY, textPaint);
+                      textPaint.setAlpha(255);
+                  }
+              }
+          }
+          EOF
+
+      - name: Build Debug APK
+        run: gradle assembleDebug
+
+      - name: Upload APK Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: Solana-Live-Wallpaper-V2-Pro-APK
+          path: app/build/outputs/apk/debug/app-debug.apk
