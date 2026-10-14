@@ -7,7 +7,6 @@ on:
 
 jobs:
   build:
-    runs-tier: ubuntu-latest
     runs-on: ubuntu-latest
 
     steps:
@@ -18,9 +17,9 @@ jobs:
           java-version: '17'
 
       - name: Setup Gradle
-        uses: gradle/actions/setup-gradle@v3
+        uses: gradle/actions/setup-gradle@v4
         with:
-          gradle-version: '8.7'
+          gradle-version: '8.6'
 
       - name: Generate Android Live Wallpaper Project
         run: |
@@ -49,8 +48,7 @@ jobs:
 
           cat << 'EOF' > build.gradle
           plugins {
-              id 'com.android.application' version '8.3.0' apply false
-              id 'org.jetbrains.kotlin.android' version '1.9.22' apply false
+              id 'com.android.application' version '8.2.2' apply false
           }
           EOF
 
@@ -62,7 +60,6 @@ jobs:
           cat << 'EOF' > app/build.gradle
           plugins {
               id 'com.android.application'
-              id 'org.jetbrains.kotlin.android'
           }
 
           android {
@@ -80,9 +77,6 @@ jobs:
               compileOptions {
                   sourceCompatibility JavaVersion.VERSION_17
                   targetCompatibility JavaVersion.VERSION_17
-              }
-              kotlinOptions {
-                  jvmTarget = '17'
               }
           }
           EOF
@@ -138,329 +132,556 @@ jobs:
           </manifest>
           EOF
 
-          cat << 'EOF' > app/src/main/java/com/solana/wallpaper/MainActivity.kt
-          package com.solana.wallpaper
+          cat << 'EOF' > app/src/main/java/com/solana/wallpaper/MainActivity.java
+          package com.solana.wallpaper;
 
-          import android.app.Activity
-          import android.app.WallpaperManager
-          import android.content.ComponentName
-          import android.content.Context
-          import android.content.Intent
-          import android.graphics.Color
-          import android.graphics.Typeface
-          import android.graphics.drawable.GradientDrawable
-          import android.os.Bundle
-          import android.text.Editable
-          import android.text.InputType
-          import android.text.TextWatcher
-          import android.view.Gravity
-          import android.widget.*
-          import kotlin.math.roundToInt
+          import android.app.Activity;
+          import android.app.WallpaperManager;
+          import android.content.ComponentName;
+          import android.content.Context;
+          import android.content.Intent;
+          import android.content.SharedPreferences;
+          import android.graphics.Color;
+          import android.graphics.Typeface;
+          import android.graphics.drawable.GradientDrawable;
+          import android.os.Bundle;
+          import android.text.Editable;
+          import android.text.InputType;
+          import android.text.TextWatcher;
+          import android.view.Gravity;
+          import android.widget.Button;
+          import android.widget.EditText;
+          import android.widget.LinearLayout;
+          import android.widget.SeekBar;
+          import android.widget.TextView;
+          import java.util.Locale;
 
-          class MainActivity : Activity() {
-              override fun onCreate(savedInstanceState: Bundle?) {
-                  super.onCreate(savedInstanceState)
+          public class MainActivity extends Activity {
+              private boolean isUpdating = false;
 
-                  val prefs = getSharedPreferences("solana_wp_prefs", Context.MODE_PRIVATE)
-                  val currentSol = prefs.getFloat("sol_goal_amount", 1.0f)
+              private int toPx(int dpVal, float density) {
+                  return Math.round(dpVal * density);
+              }
 
-                  val dp = resources.displayMetrics.density
-                  fun Int.toPx() = (this * dp).toInt()
+              @Override
+              protected void onCreate(Bundle savedInstanceState) {
+                  super.onCreate(savedInstanceState);
 
-                  val root = LinearLayout(this).apply {
-                      orientation = LinearLayout.VERTICAL
-                      gravity = Gravity.CENTER_HORIZONTAL
-                      setPadding(24.toPx(), 24.toPx(), 24.toPx(), 24.toPx())
-                      background = GradientDrawable().apply {
-                          setColor(Color.parseColor("#0F1118"))
-                          cornerRadius = 20f * dp
-                          setStroke(2, Color.parseColor("#30FFFFFF"))
-                      }
-                  }
+                  final SharedPreferences prefs = getSharedPreferences("solana_wp_prefs", Context.MODE_PRIVATE);
+                  float currentSol = prefs.getFloat("sol_goal_amount", 1.0f);
+                  final float dp = getResources().getDisplayMetrics().density;
 
-                  val title = TextView(this).apply {
-                      text = "UPDATE MODAL TRADING"
-                      textSize = 15f
-                      setTypeface(Typeface.DEFAULT_BOLD)
-                      setTextColor(Color.WHITE)
-                      gravity = Gravity.CENTER
-                      setPadding(0, 0, 0, 18.toPx())
-                  }
-                  root.addView(title)
+                  LinearLayout root = new LinearLayout(this);
+                  root.setOrientation(LinearLayout.VERTICAL);
+                  root.setGravity(Gravity.CENTER_HORIZONTAL);
+                  root.setPadding(toPx(24, dp), toPx(24, dp), toPx(24, dp), toPx(24, dp));
 
-                  val inputSol = EditText(this).apply {
-                      setText(String.format("%.1f", currentSol).replace(",", "."))
-                      textSize = 24f
-                      setTypeface(Typeface.DEFAULT_BOLD)
-                      setTextColor(Color.WHITE)
-                      gravity = Gravity.CENTER
-                      inputType = InputType.TYPE_CLASS_NUMBER or InputType.TYPE_NUMBER_FLAG_DECIMAL
-                      background = GradientDrawable().apply {
-                          setColor(Color.parseColor("#050508"))
-                          cornerRadius = 12f * dp
-                          setStroke(2.toPx(), Color.parseColor("#00C2FF"))
-                      }
-                      setPadding(16.toPx(), 10.toPx(), 16.toPx(), 10.toPx())
-                  }
-                  root.addView(inputSol, LinearLayout.LayoutParams(150.toPx(), LinearLayout.LayoutParams.WRAP_CONTENT))
+                  GradientDrawable rootBg = new GradientDrawable();
+                  rootBg.setColor(Color.parseColor("#0F1118"));
+                  rootBg.setCornerRadius(20f * dp);
+                  rootBg.setStroke(toPx(2, dp), Color.parseColor("#30FFFFFF"));
+                  root.setBackground(rootBg);
 
-                  val seekBar = SeekBar(this).apply {
-                      max = 198 // 1.0 sampai 100.0 dengan step 0.5
-                      progress = ((currentSol - 1f) * 2f).roundToInt().coerceIn(0, 198)
-                      setPadding(0, 20.toPx(), 0, 24.toPx())
-                  }
-                  root.addView(seekBar, LinearLayout.LayoutParams(260.toPx(), LinearLayout.LayoutParams.WRAP_CONTENT))
+                  TextView title = new TextView(this);
+                  title.setText("UPDATE MODAL TRADING");
+                  title.setTextSize(15f);
+                  title.setTypeface(Typeface.DEFAULT_BOLD);
+                  title.setTextColor(Color.WHITE);
+                  title.setGravity(Gravity.CENTER);
+                  title.setPadding(0, 0, 0, toPx(18, dp));
+                  root.addView(title);
 
-                  var isUpdating = false
-                  seekBar.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
-                      override fun onProgressChanged(s: SeekBar?, p: Int, fromUser: Boolean) {
+                  final EditText inputSol = new EditText(this);
+                  inputSol.setText(String.format(Locale.US, "%.1f", currentSol));
+                  inputSol.setTextSize(24f);
+                  inputSol.setTypeface(Typeface.DEFAULT_BOLD);
+                  inputSol.setTextColor(Color.WHITE);
+                  inputSol.setGravity(Gravity.CENTER);
+                  inputSol.setInputType(InputType.TYPE_CLASS_NUMBER | InputType.TYPE_NUMBER_FLAG_DECIMAL);
+
+                  GradientDrawable inputBg = new GradientDrawable();
+                  inputBg.setColor(Color.parseColor("#050508"));
+                  inputBg.setCornerRadius(12f * dp);
+                  inputBg.setStroke(toPx(2, dp), Color.parseColor("#00C2FF"));
+                  inputSol.setBackground(inputBg);
+                  inputSol.setPadding(toPx(16, dp), toPx(10, dp), toPx(16, dp), toPx(10, dp));
+                  root.addView(inputSol, new LinearLayout.LayoutParams(toPx(150, dp), LinearLayout.LayoutParams.WRAP_CONTENT));
+
+                  final SeekBar seekBar = new SeekBar(this);
+                  seekBar.setMax(198);
+                  int initialProg = Math.round((currentSol - 1f) * 2f);
+                  seekBar.setProgress(Math.max(0, Math.min(198, initialProg)));
+                  seekBar.setPadding(0, toPx(20, dp), 0, toPx(24, dp));
+                  root.addView(seekBar, new LinearLayout.LayoutParams(toPx(260, dp), LinearLayout.LayoutParams.WRAP_CONTENT));
+
+                  seekBar.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener() {
+                      @Override
+                      public void onProgressChanged(SeekBar s, int p, boolean fromUser) {
                           if (fromUser && !isUpdating) {
-                              isUpdating = true
-                              val v = 1f + (p / 2f)
-                              inputSol.setText(String.format("%.1f", v).replace(",", "."))
-                              isUpdating = false
+                              isUpdating = true;
+                              float v = 1f + (p / 2f);
+                              inputSol.setText(String.format(Locale.US, "%.1f", v));
+                              isUpdating = false;
                           }
                       }
-                      override fun onStartTrackingTouch(s: SeekBar?) {}
-                      override fun onStopTrackingTouch(s: SeekBar?) {}
-                  })
+                      @Override public void onStartTrackingTouch(SeekBar s) {}
+                      @Override public void onStopTrackingTouch(SeekBar s) {}
+                  });
 
-                  inputSol.addTextChangedListener(object : TextWatcher {
-                      override fun afterTextChanged(s: Editable?) {
+                  inputSol.addTextChangedListener(new TextWatcher() {
+                      @Override public void beforeTextChanged(CharSequence s, int start, int count, int after) {}
+                      @Override public void onTextChanged(CharSequence s, int start, int before, int count) {}
+                      @Override
+                      public void afterTextChanged(Editable s) {
                           if (!isUpdating) {
-                              isUpdating = true
-                              val v = s.toString().toFloatOrNull() ?: 1f
-                              seekBar.progress = ((v.coerceIn(1f, 100f) - 1f) * 2f).roundToInt()
-                              isUpdating = false
+                              isUpdating = true;
+                              float v = 1f;
+                              try {
+                                  v = Float.parseFloat(s.toString());
+                              } catch (Exception ignored) {}
+                              v = Math.max(1f, Math.min(100f, v));
+                              seekBar.setProgress(Math.round((v - 1f) * 2f));
+                              isUpdating = false;
                           }
                       }
-                      override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
-                      override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {}
-                  })
+                  });
 
-                  val btnRow = LinearLayout(this).apply {
-                      orientation = LinearLayout.HORIZONTAL
-                      gravity = Gravity.CENTER
-                  }
+                  LinearLayout btnRow = new LinearLayout(this);
+                  btnRow.setOrientation(LinearLayout.HORIZONTAL);
+                  btnRow.setGravity(Gravity.CENTER);
 
-                  val btnCancel = Button(this).apply {
-                      text = "Batal"
-                      setTextColor(Color.WHITE)
-                      background = GradientDrawable().apply {
-                          setColor(Color.TRANSPARENT)
-                          cornerRadius = 12f * dp
-                          setStroke(1.toPx(), Color.parseColor("#40FFFFFF"))
+                  Button btnCancel = new Button(this);
+                  btnCancel.setText("Batal");
+                  btnCancel.setTextColor(Color.WHITE);
+                  GradientDrawable cancelBg = new GradientDrawable();
+                  cancelBg.setColor(Color.TRANSPARENT);
+                  cancelBg.setCornerRadius(12f * dp);
+                  cancelBg.setStroke(toPx(1, dp), Color.parseColor("#40FFFFFF"));
+                  btnCancel.setBackground(cancelBg);
+                  btnCancel.setOnClickListener(v -> finish());
+
+                  Button btnSave = new Button(this);
+                  btnSave.setText("Simpan");
+                  btnSave.setTextColor(Color.BLACK);
+                  btnSave.setTypeface(Typeface.DEFAULT_BOLD);
+                  GradientDrawable saveBg = new GradientDrawable();
+                  saveBg.setColor(Color.parseColor("#14F195"));
+                  saveBg.setCornerRadius(12f * dp);
+                  btnSave.setBackground(saveBg);
+                  btnSave.setOnClickListener(v -> {
+                      float val = 1f;
+                      try {
+                          val = Float.parseFloat(inputSol.getText().toString());
+                      } catch (Exception ignored) {}
+                      val = Math.max(1f, Math.min(100f, val));
+                      prefs.edit().putFloat("sol_goal_amount", val).apply();
+                      finish();
+                  });
+
+                  LinearLayout.LayoutParams lpBtn = new LinearLayout.LayoutParams(0, toPx(46, dp), 1f);
+                  lpBtn.setMargins(toPx(6, dp), 0, toPx(6, dp), 0);
+                  btnRow.addView(btnCancel, lpBtn);
+                  btnRow.addView(btnSave, lpBtn);
+                  root.addView(btnRow, new LinearLayout.LayoutParams(toPx(260, dp), LinearLayout.LayoutParams.WRAP_CONTENT));
+
+                  Button btnApplyWp = new Button(this);
+                  btnApplyWp.setText("PASANG SEBAGAI LIVE WALLPAPER");
+                  btnApplyWp.setTextSize(11f);
+                  btnApplyWp.setTypeface(Typeface.DEFAULT_BOLD);
+                  btnApplyWp.setTextColor(Color.WHITE);
+                  GradientDrawable applyBg = new GradientDrawable(
+                      GradientDrawable.Orientation.LEFT_RIGHT,
+                      new int[]{Color.parseColor("#9945FF"), Color.parseColor("#00C2FF")}
+                  );
+                  applyBg.setCornerRadius(10f * dp);
+                  btnApplyWp.setBackground(applyBg);
+                  btnApplyWp.setOnClickListener(v -> {
+                      float val = 1f;
+                      try {
+                          val = Float.parseFloat(inputSol.getText().toString());
+                      } catch (Exception ignored) {}
+                      val = Math.max(1f, Math.min(100f, val));
+                      prefs.edit().putFloat("sol_goal_amount", val).apply();
+                      try {
+                          Intent intent = new Intent(WallpaperManager.ACTION_CHANGE_LIVE_WALLPAPER);
+                          intent.putExtra(
+                              WallpaperManager.EXTRA_LIVE_WALLPAPER_COMPONENT,
+                              new ComponentName(MainActivity.this, SolanaWallpaperService.class)
+                          );
+                          startActivity(intent);
+                      } catch (Exception e) {
+                          startActivity(new Intent(WallpaperManager.ACTION_LIVE_WALLPAPER_CHOOSER));
                       }
-                      setOnClickListener { finish() }
-                  }
+                      finish();
+                  });
 
-                  val btnSave = Button(this).apply {
-                      text = "Simpan"
-                      setTextColor(Color.BLACK)
-                      setTypeface(Typeface.DEFAULT_BOLD)
-                      background = GradientDrawable().apply {
-                          setColor(Color.parseColor("#14F195"))
-                          cornerRadius = 12f * dp
-                      }
-                      setOnClickListener {
-                          val v = (inputSol.text.toString().toFloatOrNull() ?: 1f).coerceIn(1f, 100f)
-                          prefs.edit().putFloat("sol_goal_amount", v).apply()
-                          finish()
-                      }
-                  }
+                  LinearLayout.LayoutParams lpApply = new LinearLayout.LayoutParams(toPx(260, dp), toPx(44, dp));
+                  lpApply.topMargin = toPx(14, dp);
+                  root.addView(btnApplyWp, lpApply);
 
-                  val lpBtn = LinearLayout.LayoutParams(0, 46.toPx(), 1f).apply {
-                      setMargins(6.toPx(), 0, 6.toPx(), 0)
-                  }
-                  btnRow.addView(btnCancel, lpBtn)
-                  btnRow.addView(btnSave, lpBtn)
-                  root.addView(btnRow, LinearLayout.LayoutParams(260.toPx(), LinearLayout.LayoutParams.WRAP_CONTENT))
-
-                  val btnApplyWp = Button(this).apply {
-                      text = "PASANG SEBAGAI LIVE WALLPAPER"
-                      textSize = 11f
-                      setTypeface(Typeface.DEFAULT_BOLD)
-                      setTextColor(Color.WHITE)
-                      background = GradientDrawable(
-                          GradientDrawable.Orientation.LEFT_RIGHT,
-                          intArrayOf(Color.parseColor("#9945FF"), Color.parseColor("#00C2FF"))
-                      ).apply { cornerRadius = 10f * dp }
-                      setOnClickListener {
-                          val v = (inputSol.text.toString().toFloatOrNull() ?: 1f).coerceIn(1f, 100f)
-                          prefs.edit().putFloat("sol_goal_amount", v).apply()
-                          try {
-                              val intent = Intent(WallpaperManager.ACTION_CHANGE_LIVE_WALLPAPER).apply {
-                                  putExtra(
-                                      WallpaperManager.EXTRA_LIVE_WALLPAPER_COMPONENT,
-                                      ComponentName(this@MainActivity, SolanaWallpaperService::class.java)
-                                  )
-                              }
-                              startActivity(intent)
-                          } catch (e: Exception) {
-                              val intent = Intent(WallpaperManager.ACTION_LIVE_WALLPAPER_CHOOSER)
-                              startActivity(intent)
-                          }
-                          finish()
-                      }
-                  }
-                  val lpApply = LinearLayout.LayoutParams(260.toPx(), 44.toPx()).apply {
-                      topMargin = 14.toPx()
-                  }
-                  root.addView(btnApplyWp, lpApply)
-
-                  setContentView(root)
+                  setContentView(root);
               }
           }
           EOF
 
-          cat << 'EOF' > app/src/main/java/com/solana/wallpaper/SolanaWallpaperService.kt
-          package com.solana.wallpaper
+          cat << 'EOF' > app/src/main/java/com/solana/wallpaper/SolanaWallpaperService.java
+          package com.solana.wallpaper;
 
-          import android.content.Context
-          import android.content.Intent
-          import android.graphics.*
-          import android.os.Handler
-          import android.os.Looper
-          import android.service.wallpaper.WallpaperService
-          import android.view.MotionEvent
-          import android.view.SurfaceHolder
-          import kotlin.math.*
-          import kotlin.random.Random
+          import android.content.Context;
+          import android.content.Intent;
+          import android.content.SharedPreferences;
+          import android.graphics.Canvas;
+          import android.graphics.Color;
+          import android.graphics.LinearGradient;
+          import android.graphics.Paint;
+          import android.graphics.Path;
+          import android.graphics.RectF;
+          import android.graphics.Shader;
+          import android.graphics.Typeface;
+          import android.os.Handler;
+          import android.os.Looper;
+          import android.service.wallpaper.WallpaperService;
+          import android.view.MotionEvent;
+          import android.view.SurfaceHolder;
+          import java.util.ArrayList;
+          import java.util.List;
+          import java.util.Locale;
+          import java.util.Random;
 
-          class SolanaWallpaperService : WallpaperService() {
-              override fun onCreateEngine(): Engine = SolanaEngine()
+          public class SolanaWallpaperService extends WallpaperService {
+              @Override
+              public Engine onCreateEngine() {
+                  return new SolanaEngine();
+              }
 
-              inner class SolanaEngine : Engine() {
-                  private val handler = Handler(Looper.getMainLooper())
-                  private var visible = false
-                  private var width = 0f
-                  private var height = 0f
-                  private var dp = 1f
+              private class SolanaEngine extends Engine {
+                  private final Handler handler = new Handler(Looper.getMainLooper());
+                  private boolean isEngineVisible = false;
+                  private float screenW = 0f;
+                  private float screenH = 0f;
+                  private float dp = 1f;
 
-                  private var targetSol = 1f
-                  private var animatedSol = 1f
+                  private float targetSol = 1f;
+                  private float animatedSol = 1f;
 
-                  private val btnMinusRect = RectF()
-                  private val btnConfigRect = RectF()
-                  private val btnPlusRect = RectF()
-                  private var downX = 0f
-                  private var downY = 0f
+                  private final RectF btnMinusRect = new RectF();
+                  private final RectF btnConfigRect = new RectF();
+                  private final RectF btnPlusRect = new RectF();
+                  private float downX = 0f;
+                  private float downY = 0f;
 
-                  private val particles = mutableListOf<Particle>()
-                  private val paint = Paint(Paint.ANTI_ALIAS_FLAG)
-                  private val textPaint = Paint(Paint.ANTI_ALIAS_FLAG)
+                  private final List<Particle> particles = new ArrayList<>();
+                  private final Paint paint = new Paint(Paint.ANTI_ALIAS_FLAG);
+                  private final Paint textPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
+                  private final Random random = new Random();
 
-                  inner class Particle(
-                      var x: Float,
-                      var y: Float,
-                      val radius: Float,
-                      val speedY: Float,
-                      val alpha: Int,
-                      val color: Int
-                  )
+                  private class Particle {
+                      float x, y, radius, speedY;
+                      int alpha, color;
+                  }
 
-                  private val drawRunner = object : Runnable {
-                      override fun run() {
-                          drawFrame()
-                          if (visible) {
-                              handler.postDelayed(this, 16L)
+                  private final Runnable drawRunner = new Runnable() {
+                      @Override
+                      public void run() {
+                          drawFrame();
+                          if (isEngineVisible) {
+                              handler.postDelayed(this, 16L);
                           }
                       }
+                  };
+
+                  @Override
+                  public void onCreate(SurfaceHolder surfaceHolder) {
+                      super.onCreate(surfaceHolder);
+                      setTouchEventsEnabled(true);
+                      dp = getResources().getDisplayMetrics().density;
                   }
 
-                  override fun onCreate(surfaceHolder: SurfaceHolder?) {
-                      super.onCreate(surfaceHolder)
-                      setTouchEventsEnabled(true)
-                      dp = resources.displayMetrics.density
-                  }
-
-                  override fun onVisibilityChanged(visible: Boolean) {
-                      this.visible = visible
+                  @Override
+                  public void onVisibilityChanged(boolean visible) {
+                      this.isEngineVisible = visible;
                       if (visible) {
-                          val prefs = getSharedPreferences("solana_wp_prefs", Context.MODE_PRIVATE)
-                          targetSol = prefs.getFloat("sol_goal_amount", 1.0f).coerceIn(1f, 100f)
-                          handler.removeCallbacks(drawRunner)
-                          handler.post(drawRunner)
+                          SharedPreferences prefs = getSharedPreferences("solana_wp_prefs", Context.MODE_PRIVATE);
+                          targetSol = Math.max(1f, Math.min(100f, prefs.getFloat("sol_goal_amount", 1.0f)));
+                          handler.removeCallbacks(drawRunner);
+                          handler.post(drawRunner);
                       } else {
-                          handler.removeCallbacks(drawRunner)
+                          handler.removeCallbacks(drawRunner);
                       }
                   }
 
-                  override fun onSurfaceChanged(holder: SurfaceHolder?, format: Int, w: Int, h: Int) {
-                      super.onSurfaceChanged(holder, format, w, h)
-                      width = w.toFloat()
-                      height = h.toFloat()
-                      initParticles()
+                  @Override
+                  public void onSurfaceChanged(SurfaceHolder holder, int format, int width, int height) {
+                      super.onSurfaceChanged(holder, format, width, height);
+                      screenW = width;
+                      screenH = height;
+                      initParticles();
                   }
 
-                  private fun initParticles() {
-                      particles.clear()
-                      for (i in 0 until 24) {
-                          particles.add(
-                              Particle(
-                                  x = Random.nextFloat() * width,
-                                  y = Random.nextFloat() * height,
-                                  radius = (Random.nextFloat() * 2f + 0.8f) * dp,
-                                  speedY = -(Random.nextFloat() * 0.45f + 0.15f) * dp,
-                                  alpha = (Random.nextFloat() * 150 + 35).toInt(),
-                                  color = if (Random.nextBoolean()) Color.parseColor("#9945FF") else Color.parseColor("#14F195")
-                              )
-                          )
+                  private void initParticles() {
+                      particles.clear();
+                      for (int i = 0; i < 24; i++) {
+                          Particle p = new Particle();
+                          p.x = random.nextFloat() * screenW;
+                          p.y = random.nextFloat() * screenH;
+                          p.radius = (random.nextFloat() * 2f + 0.8f) * dp;
+                          p.speedY = -(random.nextFloat() * 0.45f + 0.15f) * dp;
+                          p.alpha = random.nextInt(140) + 40;
+                          p.color = random.nextBoolean() ? Color.parseColor("#9945FF") : Color.parseColor("#14F195");
+                          particles.add(p);
                       }
                   }
 
-                  override fun onTouchEvent(event: MotionEvent?) {
-                      if (event == null) return
-                      when (event.action) {
-                          MotionEvent.ACTION_DOWN -> {
-                              downX = event.x
-                              downY = event.y
-                          }
-                          MotionEvent.ACTION_UP -> {
-                              if (hypot(event.x - downX, event.y - downY) < 15f * dp) {
-                                  when {
-                                      btnMinusRect.contains(event.x, event.y) -> adjustSol(-1f)
-                                      btnPlusRect.contains(event.x, event.y) -> adjustSol(1f)
-                                      btnConfigRect.contains(event.x, event.y) -> {
-                                          val intent = Intent(this@SolanaWallpaperService, MainActivity::class.java).apply {
-                                              addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                                          }
-                                          startActivity(intent)
-                                      }
-                                  }
+                  @Override
+                  public void onTouchEvent(MotionEvent event) {
+                      if (event == null) return;
+                      int action = event.getAction();
+                      if (action == MotionEvent.ACTION_DOWN) {
+                          downX = event.getX();
+                          downY = event.getY();
+                      } else if (action == MotionEvent.ACTION_UP) {
+                          double dist = Math.hypot(event.getX() - downX, event.getY() - downY);
+                          if (dist < 15f * dp) {
+                              float ex = event.getX();
+                              float ey = event.getY();
+                              if (btnMinusRect.contains(ex, ey)) {
+                                  adjustSol(-1f);
+                              } else if (btnPlusRect.contains(ex, ey)) {
+                                  adjustSol(1f);
+                              } else if (btnConfigRect.contains(ex, ey)) {
+                                  Intent intent = new Intent(SolanaWallpaperService.this, MainActivity.class);
+                                  intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+                                  startActivity(intent);
                               }
                           }
                       }
-                      super.onTouchEvent(event)
+                      super.onTouchEvent(event);
                   }
 
-                  private fun adjustSol(delta: Float) {
-                      val prefs = getSharedPreferences("solana_wp_prefs", Context.MODE_PRIVATE)
-                      targetSol = ((targetSol + delta) * 10f).roundToInt() / 10f
-                      targetSol = targetSol.coerceIn(1f, 100f)
-                      prefs.edit().putFloat("sol_goal_amount", targetSol).apply()
+                  private void adjustSol(float delta) {
+                      SharedPreferences prefs = getSharedPreferences("solana_wp_prefs", Context.MODE_PRIVATE);
+                      targetSol = Math.round((targetSol + delta) * 10f) / 10f;
+                      targetSol = Math.max(1f, Math.min(100f, targetSol));
+                      prefs.edit().putFloat("sol_goal_amount", targetSol).apply();
                   }
 
-                  private fun drawFrame() {
-                      val holder = surfaceHolder ?: return
-                      var canvas: Canvas? = null
+                  private void drawFrame() {
+                      SurfaceHolder holder = getSurfaceHolder();
+                      if (holder == null) return;
+                      Canvas canvas = null;
                       try {
-                          canvas = holder.lockCanvas()
+                          canvas = holder.lockCanvas();
                           if (canvas != null) {
-                              renderWallpaper(canvas)
+                              renderWallpaper(canvas);
                           }
                       } finally {
                           if (canvas != null) {
-                              try { holder.unlockCanvasAndPost(canvas) } catch (_: Exception) {}
+                              try {
+                                  holder.unlockCanvasAndPost(canvas);
+                              } catch (Exception ignored) {}
                           }
                       }
                   }
 
-                  private fun renderWallpaper(canvas: Canvas) {
-                      val now = System.currentTimeMillis()
-                      animatedSol += (targetSol - animatedSol) * 0.14f
+                  private void renderWallpaper(Canvas canvas) {
+                      long now = System.currentTimeMillis();
+                      animatedSol += (targetSol - animatedSol) * 0.14f;
 
-                      // 1. Background #050508
-                      canvas.drawColor(Color.parseColor("#050508"))
+                      canvas.drawColor(Color.parseColor("#050508"));
 
-                      // 2
+                      for (Particle p : particles) {
+                          p.y += p.speedY;
+                          if (p.y < -10f * dp) p.y = screenH + 10f * dp;
+                          paint.setShader(null);
+                          paint.setStyle(Paint.Style.FILL);
+                          paint.setColor(p.color);
+                          paint.setAlpha(p.alpha);
+                          canvas.drawCircle(p.x, p.y, p.radius, paint);
+                      }
+                      paint.setAlpha(255);
+
+                      float cx = screenW / 2f;
+                      float cy = screenH / 2f;
+                      float contentW = Math.min(screenW * 0.86f, 360f * dp);
+
+                      // Animated Solana Logo
+                      float floatOffset = (float) Math.sin(now / 950.0) * 5f * dp;
+                      float logoTop = cy - 155f * dp + floatOffset;
+                      float barW = 44f * dp;
+                      float barH = 7f * dp;
+                      float barGap = 5f * dp;
+                      LinearGradient logoGrad = new LinearGradient(
+                          cx - barW / 2f, 0f, cx + barW / 2f, 0f,
+                          Color.parseColor("#9945FF"), Color.parseColor("#14F195"),
+                          Shader.TileMode.CLAMP
+                      );
+                      paint.setShader(logoGrad);
+                      for (int i = 0; i < 3; i++) {
+                          float shift = (i == 1) ? -2f * dp : 2f * dp;
+                          float top = logoTop + i * (barH + barGap);
+                          RectF rect = new RectF(cx - barW / 2f + shift, top, cx + barW / 2f + shift, top + barH);
+                          canvas.drawRoundRect(rect, 4f * dp, 4f * dp, paint);
+                      }
+                      paint.setShader(null);
+
+                      // Title & Pulse Dot
+                      float titleY = cy - 88f * dp;
+                      textPaint.setTypeface(Typeface.create(Typeface.DEFAULT, Typeface.BOLD));
+                      textPaint.setTextSize(15f * dp);
+                      textPaint.setLetterSpacing(0.18f);
+                      textPaint.setColor(Color.parseColor("#E6FFFFFF"));
+                      textPaint.setTextAlign(Paint.Align.CENTER);
+                      canvas.drawText("ROAD TO 100 SOL", cx - 8f * dp, titleY, textPaint);
+
+                      float titleWidth = textPaint.measureText("ROAD TO 100 SOL");
+                      int pulseAlpha = (int) ((Math.sin(now / 220.0) * 0.35 + 0.65) * 255);
+                      pulseAlpha = Math.max(60, Math.min(255, pulseAlpha));
+                      paint.setColor(Color.parseColor("#14F195"));
+                      paint.setAlpha(pulseAlpha);
+                      canvas.drawCircle(cx + titleWidth / 2f + 4f * dp, titleY - 5f * dp, 3.8f * dp, paint);
+                      paint.setAlpha(255);
+
+                      // Progress Box
+                      float boxTop = cy - 62f * dp;
+                      float boxH = 38f * dp;
+                      RectF boxRect = new RectF(cx - contentW / 2f, boxTop, cx + contentW / 2f, boxTop + boxH);
+                      paint.setColor(Color.parseColor("#D910121B"));
+                      canvas.drawRoundRect(boxRect, 14f * dp, 14f * dp, paint);
+
+                      paint.setStyle(Paint.Style.STROKE);
+                      paint.setStrokeWidth(1.5f * dp);
+                      paint.setColor(Color.parseColor("#26FFFFFF"));
+                      canvas.drawRoundRect(boxRect, 14f * dp, 14f * dp, paint);
+                      paint.setStyle(Paint.Style.FILL);
+
+                      float pad = 5f * dp;
+                      RectF trackRect = new RectF(boxRect.left + pad, boxRect.top + pad, boxRect.right - pad, boxRect.bottom - pad);
+                      paint.setColor(Color.parseColor("#090A10"));
+                      canvas.drawRoundRect(trackRect, 10f * dp, 10f * dp, paint);
+
+                      // Progress Fill + Shimmer
+                      float percent = Math.max(0f, Math.min(1f, (animatedSol - 1f) / 99f));
+                      float fillRatio = Math.max(percent, 0.03f);
+                      float fillW = trackRect.width() * fillRatio;
+                      RectF fillRect = new RectF(trackRect.left, trackRect.top, trackRect.left + fillW, trackRect.bottom);
+
+                      canvas.save();
+                      Path clipPath = new Path();
+                      clipPath.addRoundRect(trackRect, 10f * dp, 10f * dp, Path.Direction.CW);
+                      canvas.clipPath(clipPath);
+
+                      float gradShift = ((now % 3000L) / 3000f) * trackRect.width();
+                      paint.setShader(new LinearGradient(
+                          trackRect.left - gradShift, 0f, trackRect.right + trackRect.width() - gradShift, 0f,
+                          new int[]{
+                              Color.parseColor("#9945FF"),
+                              Color.parseColor("#00C2FF"),
+                              Color.parseColor("#14F195"),
+                              Color.parseColor("#9945FF")
+                          },
+                          null,
+                          Shader.TileMode.REPEAT
+                      ));
+                      canvas.drawRoundRect(fillRect, 10f * dp, 10f * dp, paint);
+
+                      float sweepPhase = (now % 2000L) / 2000f;
+                      float sweepX = fillRect.left - fillW + sweepPhase * (fillW * 3f);
+                      paint.setShader(new LinearGradient(
+                          sweepX, 0f, sweepX + fillW * 0.8f, 0f,
+                          new int[]{Color.TRANSPARENT, Color.parseColor("#99FFFFFF"), Color.TRANSPARENT},
+                          null,
+                          Shader.TileMode.CLAMP
+                      ));
+                      canvas.drawRoundRect(fillRect, 10f * dp, 10f * dp, paint);
+                      paint.setShader(null);
+                      canvas.restore();
+
+                      // Scale Row
+                      float scaleY = boxRect.bottom + 22f * dp;
+                      textPaint.setTextSize(13f * dp);
+                      textPaint.setLetterSpacing(0.08f);
+                      textPaint.setTextAlign(Paint.Align.LEFT);
+                      textPaint.setColor(Color.parseColor("#9945FF"));
+                      canvas.drawText("1 SOL", boxRect.left, scaleY, textPaint);
+
+                      textPaint.setTextAlign(Paint.Align.RIGHT);
+                      textPaint.setColor(Color.parseColor("#14F195"));
+                      canvas.drawText("100 SOL", boxRect.right, scaleY, textPaint);
+
+                      // Balance Card
+                      float amountY = scaleY + 58f * dp;
+                      String solText = (targetSol % 1f == 0f)
+                          ? ((int) targetSol) + " SOL"
+                          : String.format(Locale.US, "%.1f SOL", targetSol);
+                      textPaint.setTextAlign(Paint.Align.CENTER);
+                      textPaint.setTextSize(38f * dp);
+                      textPaint.setLetterSpacing(-0.02f);
+                      textPaint.setShader(new LinearGradient(
+                          cx - 80f * dp, amountY - 30f * dp, cx + 80f * dp, amountY,
+                          Color.WHITE, Color.parseColor("#14F195"), Shader.TileMode.CLAMP
+                      ));
+                      canvas.drawText(solText, cx, amountY, textPaint);
+                      textPaint.setShader(null);
+
+                      float exactPercent = Math.max(0f, Math.min(100f, (targetSol - 1f) / 99f * 100f));
+                      float remaining = Math.max(0f, 100f - targetSol);
+                      String subText = String.format(Locale.US, "Progres: %.1f%% • Sisa %.1f SOL", exactPercent, remaining);
+                      textPaint.setTextSize(13f * dp);
+                      textPaint.setLetterSpacing(0.06f);
+                      textPaint.setTypeface(Typeface.DEFAULT);
+                      textPaint.setColor(Color.parseColor("#99FFFFFF"));
+                      canvas.drawText(subText, cx, amountY + 26f * dp, textPaint);
+
+                      // Buttons (-1 | ATUR SALDO | +1)
+                      float btnTop = amountY + 54f * dp;
+                      float btnH = 40f * dp;
+                      float stepW = 56f * dp;
+                      float configW = 136f * dp;
+                      float gap = 12f * dp;
+
+                      btnConfigRect.set(cx - configW / 2f, btnTop, cx + configW / 2f, btnTop + btnH);
+                      btnMinusRect.set(btnConfigRect.left - gap - stepW, btnTop, btnConfigRect.left - gap, btnTop + btnH);
+                      btnPlusRect.set(btnConfigRect.right + gap, btnTop, btnConfigRect.right + gap + stepW, btnTop + btnH);
+
+                      RectF[] stepRects = new RectF[]{btnMinusRect, btnPlusRect};
+                      for (RectF r : stepRects) {
+                          paint.setColor(Color.parseColor("#12FFFFFF"));
+                          canvas.drawRoundRect(r, 10f * dp, 10f * dp, paint);
+                          paint.setStyle(Paint.Style.STROKE);
+                          paint.setStrokeWidth(1f * dp);
+                          paint.setColor(Color.parseColor("#26FFFFFF"));
+                          canvas.drawRoundRect(r, 10f * dp, 10f * dp, paint);
+                          paint.setStyle(Paint.Style.FILL);
+                      }
+
+                      paint.setShader(new LinearGradient(
+                          btnConfigRect.left, btnConfigRect.top, btnConfigRect.right, btnConfigRect.bottom,
+                          Color.parseColor("#9945FF"), Color.parseColor("#14F195"), Shader.TileMode.CLAMP
+                      ));
+                      canvas.drawRoundRect(btnConfigRect, 10f * dp, 10f * dp, paint);
+                      paint.setShader(null);
+
+                      float btnTextY = btnTop + btnH / 2f + 5f * dp;
+                      textPaint.setTypeface(Typeface.create(Typeface.DEFAULT, Typeface.BOLD));
+                      textPaint.setTextSize(14f * dp);
+                      textPaint.setLetterSpacing(0.02f);
+                      textPaint.setColor(Color.WHITE);
+                      canvas.drawText("-1", btnMinusRect.centerX(), btnTextY, textPaint);
+                      canvas.drawText("+1", btnPlusRect.centerX(), btnTextY, textPaint);
+
+                      textPaint.setColor(Color.BLACK);
+                      textPaint.setTextSize(13f * dp);
+                      canvas.drawText("ATUR SALDO", btnConfigRect.centerX(), btnTextY, textPaint);
+                  }
+              }
+          }
+          EOF
+
+      - name: Build Debug APK
+        run: gradle assembleDebug
+
+      - name: Upload APK Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: Solana-Live-Wallpaper-APK
+          path: app/build/outputs/apk/debug/app-debug.apk
