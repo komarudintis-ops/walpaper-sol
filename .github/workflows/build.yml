@@ -1,4 +1,4 @@
-name: Build Solana Live Wallpaper APK
+name: Build Solana Live Wallpaper V2 Pro APK
 
 on:
   push:
@@ -21,7 +21,7 @@ jobs:
         with:
           gradle-version: '8.6'
 
-      - name: Generate Android Live Wallpaper Project
+      - name: Generate Android Live Wallpaper V2 Project
         run: |
           mkdir -p app/src/main/java/com/solana/wallpaper
           mkdir -p app/src/main/res/xml
@@ -70,8 +70,8 @@ jobs:
                   applicationId "com.solana.wallpaper"
                   minSdk 24
                   targetSdk 34
-                  versionCode 1
-                  versionName "1.0"
+                  versionCode 2
+                  versionName "2.0-PRO"
               }
 
               compileOptions {
@@ -84,7 +84,7 @@ jobs:
           cat << 'EOF' > app/src/main/res/values/strings.xml
           <?xml version="1.0" encoding="utf-8"?>
           <resources>
-              <string name="app_name">Solana Live Tracker</string>
+              <string name="app_name">Solana Pro Tracker</string>
           </resources>
           EOF
 
@@ -99,6 +99,7 @@ jobs:
           <?xml version="1.0" encoding="utf-8"?>
           <manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
+              <uses-permission android:name="android.permission.INTERNET" />
               <uses-feature android:name="android.software.live_wallpaper" android:required="true" />
 
               <application
@@ -119,7 +120,7 @@ jobs:
                   <service
                       android:name=".SolanaWallpaperService"
                       android:exported="true"
-                      android:label="Solana Road to 100 SOL"
+                      android:label="Solana Road to Goal Pro"
                       android:permission="android.permission.BIND_WALLPAPER">
                       <intent-filter>
                           <action android:name="android.service.wallpaper.WallpaperService" />
@@ -169,31 +170,40 @@ jobs:
 
                   final SharedPreferences prefs = getSharedPreferences("solana_wp_prefs", Context.MODE_PRIVATE);
                   float currentSol = prefs.getFloat("sol_goal_amount", 1.0f);
+                  float targetGoal = prefs.getFloat("sol_goal_target", 100.0f);
+                  boolean useIdr = prefs.getBoolean("use_idr", true);
                   final float dp = getResources().getDisplayMetrics().density;
 
                   LinearLayout root = new LinearLayout(this);
                   root.setOrientation(LinearLayout.VERTICAL);
                   root.setGravity(Gravity.CENTER_HORIZONTAL);
-                  root.setPadding(toPx(24, dp), toPx(24, dp), toPx(24, dp), toPx(24, dp));
+                  root.setPadding(toPx(22, dp), toPx(22, dp), toPx(22, dp), toPx(22, dp));
 
                   GradientDrawable rootBg = new GradientDrawable();
                   rootBg.setColor(Color.parseColor("#0F1118"));
                   rootBg.setCornerRadius(20f * dp);
-                  rootBg.setStroke(toPx(2, dp), Color.parseColor("#30FFFFFF"));
+                  rootBg.setStroke(toPx(2, dp), Color.parseColor("#35FFFFFF"));
                   root.setBackground(rootBg);
 
                   TextView title = new TextView(this);
-                  title.setText("UPDATE MODAL TRADING");
-                  title.setTextSize(15f);
+                  title.setText("PENGATURAN PORTFOLIO SOL");
+                  title.setTextSize(14f);
                   title.setTypeface(Typeface.DEFAULT_BOLD);
                   title.setTextColor(Color.WHITE);
                   title.setGravity(Gravity.CENTER);
-                  title.setPadding(0, 0, 0, toPx(18, dp));
+                  title.setPadding(0, 0, 0, toPx(14, dp));
                   root.addView(title);
 
+                  TextView lblCurrent = new TextView(this);
+                  lblCurrent.setText("SALDO SAAT INI (SOL)");
+                  lblCurrent.setTextSize(11f);
+                  lblCurrent.setTextColor(Color.parseColor("#99FFFFFF"));
+                  lblCurrent.setGravity(Gravity.CENTER);
+                  root.addView(lblCurrent);
+
                   final EditText inputSol = new EditText(this);
-                  inputSol.setText(String.format(Locale.US, "%.1f", currentSol));
-                  inputSol.setTextSize(24f);
+                  inputSol.setText(String.format(Locale.US, "%.2f", currentSol));
+                  inputSol.setTextSize(22f);
                   inputSol.setTypeface(Typeface.DEFAULT_BOLD);
                   inputSol.setTextColor(Color.WHITE);
                   inputSol.setGravity(Gravity.CENTER);
@@ -204,23 +214,73 @@ jobs:
                   inputBg.setCornerRadius(12f * dp);
                   inputBg.setStroke(toPx(2, dp), Color.parseColor("#00C2FF"));
                   inputSol.setBackground(inputBg);
-                  inputSol.setPadding(toPx(16, dp), toPx(10, dp), toPx(16, dp), toPx(10, dp));
-                  root.addView(inputSol, new LinearLayout.LayoutParams(toPx(150, dp), LinearLayout.LayoutParams.WRAP_CONTENT));
+                  inputSol.setPadding(toPx(14, dp), toPx(8, dp), toPx(14, dp), toPx(8, dp));
+                  LinearLayout.LayoutParams lpInput = new LinearLayout.LayoutParams(toPx(180, dp), LinearLayout.LayoutParams.WRAP_CONTENT);
+                  lpInput.topMargin = toPx(6, dp);
+                  root.addView(inputSol, lpInput);
 
                   final SeekBar seekBar = new SeekBar(this);
-                  seekBar.setMax(198);
-                  int initialProg = Math.round((currentSol - 1f) * 2f);
-                  seekBar.setProgress(Math.max(0, Math.min(198, initialProg)));
-                  seekBar.setPadding(0, toPx(20, dp), 0, toPx(24, dp));
+                  seekBar.setMax(1000);
+                  int initialProg = Math.round((currentSol / Math.max(1f, targetGoal)) * 1000f);
+                  seekBar.setProgress(Math.max(0, Math.min(1000, initialProg)));
+                  seekBar.setPadding(0, toPx(14, dp), 0, toPx(14, dp));
                   root.addView(seekBar, new LinearLayout.LayoutParams(toPx(260, dp), LinearLayout.LayoutParams.WRAP_CONTENT));
+
+                  TextView lblTarget = new TextView(this);
+                  lblTarget.setText("TARGET GOAL (SOL)");
+                  lblTarget.setTextSize(11f);
+                  lblTarget.setTextColor(Color.parseColor("#99FFFFFF"));
+                  lblTarget.setGravity(Gravity.CENTER);
+                  root.addView(lblTarget);
+
+                  final EditText inputTarget = new EditText(this);
+                  inputTarget.setText(String.format(Locale.US, "%.0f", targetGoal));
+                  inputTarget.setTextSize(18f);
+                  inputTarget.setTypeface(Typeface.DEFAULT_BOLD);
+                  inputTarget.setTextColor(Color.parseColor("#14F195"));
+                  inputTarget.setGravity(Gravity.CENTER);
+                  inputTarget.setInputType(InputType.TYPE_CLASS_NUMBER | InputType.TYPE_NUMBER_FLAG_DECIMAL);
+
+                  GradientDrawable targetBg = new GradientDrawable();
+                  targetBg.setColor(Color.parseColor("#050508"));
+                  targetBg.setCornerRadius(10f * dp);
+                  targetBg.setStroke(toPx(1, dp), Color.parseColor("#14F195"));
+                  inputTarget.setBackground(targetBg);
+                  inputTarget.setPadding(toPx(12, dp), toPx(6, dp), toPx(12, dp), toPx(6, dp));
+                  LinearLayout.LayoutParams lpTarget = new LinearLayout.LayoutParams(toPx(140, dp), LinearLayout.LayoutParams.WRAP_CONTENT);
+                  lpTarget.topMargin = toPx(6, dp);
+                  lpTarget.bottomMargin = toPx(14, dp);
+                  root.addView(inputTarget, lpTarget);
+
+                  final boolean[] currencyIdrState = new boolean[]{useIdr};
+                  final Button btnCurrency = new Button(this);
+                  btnCurrency.setText(useIdr ? "MATA UANG: RUPIAH (IDR)" : "MATA UANG: DOLLAR (USD)");
+                  btnCurrency.setTextSize(11f);
+                  btnCurrency.setTypeface(Typeface.DEFAULT_BOLD);
+                  btnCurrency.setTextColor(Color.parseColor("#00C2FF"));
+                  GradientDrawable currBg = new GradientDrawable();
+                  currBg.setColor(Color.parseColor("#1400C2FF"));
+                  currBg.setCornerRadius(10f * dp);
+                  currBg.setStroke(toPx(1, dp), Color.parseColor("#5500C2FF"));
+                  btnCurrency.setBackground(currBg);
+                  btnCurrency.setOnClickListener(v -> {
+                      currencyIdrState[0] = !currencyIdrState[0];
+                      btnCurrency.setText(currencyIdrState[0] ? "MATA UANG: RUPIAH (IDR)" : "MATA UANG: DOLLAR (USD)");
+                  });
+                  LinearLayout.LayoutParams lpCurr = new LinearLayout.LayoutParams(toPx(260, dp), toPx(38, dp));
+                  lpCurr.bottomMargin = toPx(16, dp);
+                  root.addView(btnCurrency, lpCurr);
 
                   seekBar.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener() {
                       @Override
                       public void onProgressChanged(SeekBar s, int p, boolean fromUser) {
                           if (fromUser && !isUpdating) {
                               isUpdating = true;
-                              float v = 1f + (p / 2f);
-                              inputSol.setText(String.format(Locale.US, "%.1f", v));
+                              float maxG = 100f;
+                              try { maxG = Float.parseFloat(inputTarget.getText().toString()); } catch (Exception ignored) {}
+                              maxG = Math.max(1f, maxG);
+                              float v = (p / 1000f) * maxG;
+                              inputSol.setText(String.format(Locale.US, "%.2f", v));
                               isUpdating = false;
                           }
                       }
@@ -235,12 +295,13 @@ jobs:
                       public void afterTextChanged(Editable s) {
                           if (!isUpdating) {
                               isUpdating = true;
-                              float v = 1f;
-                              try {
-                                  v = Float.parseFloat(s.toString());
-                              } catch (Exception ignored) {}
-                              v = Math.max(1f, Math.min(100f, v));
-                              seekBar.setProgress(Math.round((v - 1f) * 2f));
+                              float v = 0f;
+                              float maxG = 100f;
+                              try { v = Float.parseFloat(s.toString()); } catch (Exception ignored) {}
+                              try { maxG = Float.parseFloat(inputTarget.getText().toString()); } catch (Exception ignored) {}
+                              maxG = Math.max(1f, maxG);
+                              v = Math.max(0f, Math.min(maxG, v));
+                              seekBar.setProgress(Math.round((v / maxG) * 1000f));
                               isUpdating = false;
                           }
                       }
@@ -269,17 +330,12 @@ jobs:
                   saveBg.setCornerRadius(12f * dp);
                   btnSave.setBackground(saveBg);
                   btnSave.setOnClickListener(v -> {
-                      float val = 1f;
-                      try {
-                          val = Float.parseFloat(inputSol.getText().toString());
-                      } catch (Exception ignored) {}
-                      val = Math.max(1f, Math.min(100f, val));
-                      prefs.edit().putFloat("sol_goal_amount", val).apply();
+                      saveSettings(prefs, inputSol, inputTarget, currencyIdrState[0]);
                       finish();
                   });
 
-                  LinearLayout.LayoutParams lpBtn = new LinearLayout.LayoutParams(0, toPx(46, dp), 1f);
-                  lpBtn.setMargins(toPx(6, dp), 0, toPx(6, dp), 0);
+                  LinearLayout.LayoutParams lpBtn = new LinearLayout.LayoutParams(0, toPx(44, dp), 1f);
+                  lpBtn.setMargins(toPx(5, dp), 0, toPx(5, dp), 0);
                   btnRow.addView(btnCancel, lpBtn);
                   btnRow.addView(btnSave, lpBtn);
                   root.addView(btnRow, new LinearLayout.LayoutParams(toPx(260, dp), LinearLayout.LayoutParams.WRAP_CONTENT));
@@ -296,12 +352,7 @@ jobs:
                   applyBg.setCornerRadius(10f * dp);
                   btnApplyWp.setBackground(applyBg);
                   btnApplyWp.setOnClickListener(v -> {
-                      float val = 1f;
-                      try {
-                          val = Float.parseFloat(inputSol.getText().toString());
-                      } catch (Exception ignored) {}
-                      val = Math.max(1f, Math.min(100f, val));
-                      prefs.edit().putFloat("sol_goal_amount", val).apply();
+                      saveSettings(prefs, inputSol, inputTarget, currencyIdrState[0]);
                       try {
                           Intent intent = new Intent(WallpaperManager.ACTION_CHANGE_LIVE_WALLPAPER);
                           intent.putExtra(
@@ -315,11 +366,25 @@ jobs:
                       finish();
                   });
 
-                  LinearLayout.LayoutParams lpApply = new LinearLayout.LayoutParams(toPx(260, dp), toPx(44, dp));
-                  lpApply.topMargin = toPx(14, dp);
+                  LinearLayout.LayoutParams lpApply = new LinearLayout.LayoutParams(toPx(260, dp), toPx(42, dp));
+                  lpApply.topMargin = toPx(12, dp);
                   root.addView(btnApplyWp, lpApply);
 
                   setContentView(root);
+              }
+
+              private void saveSettings(SharedPreferences prefs, EditText inputSol, EditText inputTarget, boolean useIdr) {
+                  float val = 1f;
+                  float maxG = 100f;
+                  try { val = Float.parseFloat(inputSol.getText().toString()); } catch (Exception ignored) {}
+                  try { maxG = Float.parseFloat(inputTarget.getText().toString()); } catch (Exception ignored) {}
+                  maxG = Math.max(1f, maxG);
+                  val = Math.max(0f, Math.min(maxG, val));
+                  prefs.edit()
+                      .putFloat("sol_goal_amount", val)
+                      .putFloat("sol_goal_target", maxG)
+                      .putBoolean("use_idr", useIdr)
+                      .apply();
               }
           }
           EOF
@@ -335,6 +400,7 @@ jobs:
           import android.graphics.LinearGradient;
           import android.graphics.Paint;
           import android.graphics.Path;
+          import android.graphics.RadialGradient;
           import android.graphics.RectF;
           import android.graphics.Shader;
           import android.graphics.Typeface;
@@ -343,345 +409,21 @@ jobs:
           import android.service.wallpaper.WallpaperService;
           import android.view.MotionEvent;
           import android.view.SurfaceHolder;
+          import org.json.JSONObject;
+          import java.io.BufferedReader;
+          import java.io.InputStreamReader;
+          import java.net.HttpURLConnection;
+          import java.net.URL;
+          import java.text.NumberFormat;
+          import java.text.SimpleDateFormat;
           import java.util.ArrayList;
+          import java.util.Date;
+          import java.util.Iterator;
           import java.util.List;
           import java.util.Locale;
           import java.util.Random;
+          import java.util.concurrent.ExecutorService;
+          import java.util.concurrent.Executors;
 
           public class SolanaWallpaperService extends WallpaperService {
-              @Override
-              public Engine onCreateEngine() {
-                  return new SolanaEngine();
-              }
-
-              private class SolanaEngine extends Engine {
-                  private final Handler handler = new Handler(Looper.getMainLooper());
-                  private boolean isEngineVisible = false;
-                  private float screenW = 0f;
-                  private float screenH = 0f;
-                  private float dp = 1f;
-
-                  private float targetSol = 1f;
-                  private float animatedSol = 1f;
-
-                  private final RectF btnMinusRect = new RectF();
-                  private final RectF btnConfigRect = new RectF();
-                  private final RectF btnPlusRect = new RectF();
-                  private float downX = 0f;
-                  private float downY = 0f;
-
-                  private final List<Particle> particles = new ArrayList<>();
-                  private final Paint paint = new Paint(Paint.ANTI_ALIAS_FLAG);
-                  private final Paint textPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
-                  private final Random random = new Random();
-
-                  private class Particle {
-                      float x, y, radius, speedY;
-                      int alpha, color;
-                  }
-
-                  private final Runnable drawRunner = new Runnable() {
-                      @Override
-                      public void run() {
-                          drawFrame();
-                          if (isEngineVisible) {
-                              handler.postDelayed(this, 16L);
-                          }
-                      }
-                  };
-
-                  @Override
-                  public void onCreate(SurfaceHolder surfaceHolder) {
-                      super.onCreate(surfaceHolder);
-                      setTouchEventsEnabled(true);
-                      dp = getResources().getDisplayMetrics().density;
-                  }
-
-                  @Override
-                  public void onVisibilityChanged(boolean visible) {
-                      this.isEngineVisible = visible;
-                      if (visible) {
-                          SharedPreferences prefs = getSharedPreferences("solana_wp_prefs", Context.MODE_PRIVATE);
-                          targetSol = Math.max(1f, Math.min(100f, prefs.getFloat("sol_goal_amount", 1.0f)));
-                          handler.removeCallbacks(drawRunner);
-                          handler.post(drawRunner);
-                      } else {
-                          handler.removeCallbacks(drawRunner);
-                      }
-                  }
-
-                  @Override
-                  public void onSurfaceChanged(SurfaceHolder holder, int format, int width, int height) {
-                      super.onSurfaceChanged(holder, format, width, height);
-                      screenW = width;
-                      screenH = height;
-                      initParticles();
-                  }
-
-                  private void initParticles() {
-                      particles.clear();
-                      for (int i = 0; i < 24; i++) {
-                          Particle p = new Particle();
-                          p.x = random.nextFloat() * screenW;
-                          p.y = random.nextFloat() * screenH;
-                          p.radius = (random.nextFloat() * 2f + 0.8f) * dp;
-                          p.speedY = -(random.nextFloat() * 0.45f + 0.15f) * dp;
-                          p.alpha = random.nextInt(140) + 40;
-                          p.color = random.nextBoolean() ? Color.parseColor("#9945FF") : Color.parseColor("#14F195");
-                          particles.add(p);
-                      }
-                  }
-
-                  @Override
-                  public void onTouchEvent(MotionEvent event) {
-                      if (event == null) return;
-                      int action = event.getAction();
-                      if (action == MotionEvent.ACTION_DOWN) {
-                          downX = event.getX();
-                          downY = event.getY();
-                      } else if (action == MotionEvent.ACTION_UP) {
-                          double dist = Math.hypot(event.getX() - downX, event.getY() - downY);
-                          if (dist < 15f * dp) {
-                              float ex = event.getX();
-                              float ey = event.getY();
-                              if (btnMinusRect.contains(ex, ey)) {
-                                  adjustSol(-1f);
-                              } else if (btnPlusRect.contains(ex, ey)) {
-                                  adjustSol(1f);
-                              } else if (btnConfigRect.contains(ex, ey)) {
-                                  Intent intent = new Intent(SolanaWallpaperService.this, MainActivity.class);
-                                  intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
-                                  startActivity(intent);
-                              }
-                          }
-                      }
-                      super.onTouchEvent(event);
-                  }
-
-                  private void adjustSol(float delta) {
-                      SharedPreferences prefs = getSharedPreferences("solana_wp_prefs", Context.MODE_PRIVATE);
-                      targetSol = Math.round((targetSol + delta) * 10f) / 10f;
-                      targetSol = Math.max(1f, Math.min(100f, targetSol));
-                      prefs.edit().putFloat("sol_goal_amount", targetSol).apply();
-                  }
-
-                  private void drawFrame() {
-                      SurfaceHolder holder = getSurfaceHolder();
-                      if (holder == null) return;
-                      Canvas canvas = null;
-                      try {
-                          canvas = holder.lockCanvas();
-                          if (canvas != null) {
-                              renderWallpaper(canvas);
-                          }
-                      } finally {
-                          if (canvas != null) {
-                              try {
-                                  holder.unlockCanvasAndPost(canvas);
-                              } catch (Exception ignored) {}
-                          }
-                      }
-                  }
-
-                  private void renderWallpaper(Canvas canvas) {
-                      long now = System.currentTimeMillis();
-                      animatedSol += (targetSol - animatedSol) * 0.14f;
-
-                      canvas.drawColor(Color.parseColor("#050508"));
-
-                      for (Particle p : particles) {
-                          p.y += p.speedY;
-                          if (p.y < -10f * dp) p.y = screenH + 10f * dp;
-                          paint.setShader(null);
-                          paint.setStyle(Paint.Style.FILL);
-                          paint.setColor(p.color);
-                          paint.setAlpha(p.alpha);
-                          canvas.drawCircle(p.x, p.y, p.radius, paint);
-                      }
-                      paint.setAlpha(255);
-
-                      float cx = screenW / 2f;
-                      float cy = screenH / 2f;
-                      float contentW = Math.min(screenW * 0.86f, 360f * dp);
-
-                      // Animated Solana Logo
-                      float floatOffset = (float) Math.sin(now / 950.0) * 5f * dp;
-                      float logoTop = cy - 155f * dp + floatOffset;
-                      float barW = 44f * dp;
-                      float barH = 7f * dp;
-                      float barGap = 5f * dp;
-                      LinearGradient logoGrad = new LinearGradient(
-                          cx - barW / 2f, 0f, cx + barW / 2f, 0f,
-                          Color.parseColor("#9945FF"), Color.parseColor("#14F195"),
-                          Shader.TileMode.CLAMP
-                      );
-                      paint.setShader(logoGrad);
-                      for (int i = 0; i < 3; i++) {
-                          float shift = (i == 1) ? -2f * dp : 2f * dp;
-                          float top = logoTop + i * (barH + barGap);
-                          RectF rect = new RectF(cx - barW / 2f + shift, top, cx + barW / 2f + shift, top + barH);
-                          canvas.drawRoundRect(rect, 4f * dp, 4f * dp, paint);
-                      }
-                      paint.setShader(null);
-
-                      // Title & Pulse Dot
-                      float titleY = cy - 88f * dp;
-                      textPaint.setTypeface(Typeface.create(Typeface.DEFAULT, Typeface.BOLD));
-                      textPaint.setTextSize(15f * dp);
-                      textPaint.setLetterSpacing(0.18f);
-                      textPaint.setColor(Color.parseColor("#E6FFFFFF"));
-                      textPaint.setTextAlign(Paint.Align.CENTER);
-                      canvas.drawText("ROAD TO 100 SOL", cx - 8f * dp, titleY, textPaint);
-
-                      float titleWidth = textPaint.measureText("ROAD TO 100 SOL");
-                      int pulseAlpha = (int) ((Math.sin(now / 220.0) * 0.35 + 0.65) * 255);
-                      pulseAlpha = Math.max(60, Math.min(255, pulseAlpha));
-                      paint.setColor(Color.parseColor("#14F195"));
-                      paint.setAlpha(pulseAlpha);
-                      canvas.drawCircle(cx + titleWidth / 2f + 4f * dp, titleY - 5f * dp, 3.8f * dp, paint);
-                      paint.setAlpha(255);
-
-                      // Progress Box
-                      float boxTop = cy - 62f * dp;
-                      float boxH = 38f * dp;
-                      RectF boxRect = new RectF(cx - contentW / 2f, boxTop, cx + contentW / 2f, boxTop + boxH);
-                      paint.setColor(Color.parseColor("#D910121B"));
-                      canvas.drawRoundRect(boxRect, 14f * dp, 14f * dp, paint);
-
-                      paint.setStyle(Paint.Style.STROKE);
-                      paint.setStrokeWidth(1.5f * dp);
-                      paint.setColor(Color.parseColor("#26FFFFFF"));
-                      canvas.drawRoundRect(boxRect, 14f * dp, 14f * dp, paint);
-                      paint.setStyle(Paint.Style.FILL);
-
-                      float pad = 5f * dp;
-                      RectF trackRect = new RectF(boxRect.left + pad, boxRect.top + pad, boxRect.right - pad, boxRect.bottom - pad);
-                      paint.setColor(Color.parseColor("#090A10"));
-                      canvas.drawRoundRect(trackRect, 10f * dp, 10f * dp, paint);
-
-                      // Progress Fill + Shimmer
-                      float percent = Math.max(0f, Math.min(1f, (animatedSol - 1f) / 99f));
-                      float fillRatio = Math.max(percent, 0.03f);
-                      float fillW = trackRect.width() * fillRatio;
-                      RectF fillRect = new RectF(trackRect.left, trackRect.top, trackRect.left + fillW, trackRect.bottom);
-
-                      canvas.save();
-                      Path clipPath = new Path();
-                      clipPath.addRoundRect(trackRect, 10f * dp, 10f * dp, Path.Direction.CW);
-                      canvas.clipPath(clipPath);
-
-                      float gradShift = ((now % 3000L) / 3000f) * trackRect.width();
-                      paint.setShader(new LinearGradient(
-                          trackRect.left - gradShift, 0f, trackRect.right + trackRect.width() - gradShift, 0f,
-                          new int[]{
-                              Color.parseColor("#9945FF"),
-                              Color.parseColor("#00C2FF"),
-                              Color.parseColor("#14F195"),
-                              Color.parseColor("#9945FF")
-                          },
-                          null,
-                          Shader.TileMode.REPEAT
-                      ));
-                      canvas.drawRoundRect(fillRect, 10f * dp, 10f * dp, paint);
-
-                      float sweepPhase = (now % 2000L) / 2000f;
-                      float sweepX = fillRect.left - fillW + sweepPhase * (fillW * 3f);
-                      paint.setShader(new LinearGradient(
-                          sweepX, 0f, sweepX + fillW * 0.8f, 0f,
-                          new int[]{Color.TRANSPARENT, Color.parseColor("#99FFFFFF"), Color.TRANSPARENT},
-                          null,
-                          Shader.TileMode.CLAMP
-                      ));
-                      canvas.drawRoundRect(fillRect, 10f * dp, 10f * dp, paint);
-                      paint.setShader(null);
-                      canvas.restore();
-
-                      // Scale Row
-                      float scaleY = boxRect.bottom + 22f * dp;
-                      textPaint.setTextSize(13f * dp);
-                      textPaint.setLetterSpacing(0.08f);
-                      textPaint.setTextAlign(Paint.Align.LEFT);
-                      textPaint.setColor(Color.parseColor("#9945FF"));
-                      canvas.drawText("1 SOL", boxRect.left, scaleY, textPaint);
-
-                      textPaint.setTextAlign(Paint.Align.RIGHT);
-                      textPaint.setColor(Color.parseColor("#14F195"));
-                      canvas.drawText("100 SOL", boxRect.right, scaleY, textPaint);
-
-                      // Balance Card
-                      float amountY = scaleY + 58f * dp;
-                      String solText = (targetSol % 1f == 0f)
-                          ? ((int) targetSol) + " SOL"
-                          : String.format(Locale.US, "%.1f SOL", targetSol);
-                      textPaint.setTextAlign(Paint.Align.CENTER);
-                      textPaint.setTextSize(38f * dp);
-                      textPaint.setLetterSpacing(-0.02f);
-                      textPaint.setShader(new LinearGradient(
-                          cx - 80f * dp, amountY - 30f * dp, cx + 80f * dp, amountY,
-                          Color.WHITE, Color.parseColor("#14F195"), Shader.TileMode.CLAMP
-                      ));
-                      canvas.drawText(solText, cx, amountY, textPaint);
-                      textPaint.setShader(null);
-
-                      float exactPercent = Math.max(0f, Math.min(100f, (targetSol - 1f) / 99f * 100f));
-                      float remaining = Math.max(0f, 100f - targetSol);
-                      String subText = String.format(Locale.US, "Progres: %.1f%% • Sisa %.1f SOL", exactPercent, remaining);
-                      textPaint.setTextSize(13f * dp);
-                      textPaint.setLetterSpacing(0.06f);
-                      textPaint.setTypeface(Typeface.DEFAULT);
-                      textPaint.setColor(Color.parseColor("#99FFFFFF"));
-                      canvas.drawText(subText, cx, amountY + 26f * dp, textPaint);
-
-                      // Buttons (-1 | ATUR SALDO | +1)
-                      float btnTop = amountY + 54f * dp;
-                      float btnH = 40f * dp;
-                      float stepW = 56f * dp;
-                      float configW = 136f * dp;
-                      float gap = 12f * dp;
-
-                      btnConfigRect.set(cx - configW / 2f, btnTop, cx + configW / 2f, btnTop + btnH);
-                      btnMinusRect.set(btnConfigRect.left - gap - stepW, btnTop, btnConfigRect.left - gap, btnTop + btnH);
-                      btnPlusRect.set(btnConfigRect.right + gap, btnTop, btnConfigRect.right + gap + stepW, btnTop + btnH);
-
-                      RectF[] stepRects = new RectF[]{btnMinusRect, btnPlusRect};
-                      for (RectF r : stepRects) {
-                          paint.setColor(Color.parseColor("#12FFFFFF"));
-                          canvas.drawRoundRect(r, 10f * dp, 10f * dp, paint);
-                          paint.setStyle(Paint.Style.STROKE);
-                          paint.setStrokeWidth(1f * dp);
-                          paint.setColor(Color.parseColor("#26FFFFFF"));
-                          canvas.drawRoundRect(r, 10f * dp, 10f * dp, paint);
-                          paint.setStyle(Paint.Style.FILL);
-                      }
-
-                      paint.setShader(new LinearGradient(
-                          btnConfigRect.left, btnConfigRect.top, btnConfigRect.right, btnConfigRect.bottom,
-                          Color.parseColor("#9945FF"), Color.parseColor("#14F195"), Shader.TileMode.CLAMP
-                      ));
-                      canvas.drawRoundRect(btnConfigRect, 10f * dp, 10f * dp, paint);
-                      paint.setShader(null);
-
-                      float btnTextY = btnTop + btnH / 2f + 5f * dp;
-                      textPaint.setTypeface(Typeface.create(Typeface.DEFAULT, Typeface.BOLD));
-                      textPaint.setTextSize(14f * dp);
-                      textPaint.setLetterSpacing(0.02f);
-                      textPaint.setColor(Color.WHITE);
-                      canvas.drawText("-1", btnMinusRect.centerX(), btnTextY, textPaint);
-                      canvas.drawText("+1", btnPlusRect.centerX(), btnTextY, textPaint);
-
-                      textPaint.setColor(Color.BLACK);
-                      textPaint.setTextSize(13f * dp);
-                      canvas.drawText("ATUR SALDO", btnConfigRect.centerX(), btnTextY, textPaint);
-                  }
-              }
-          }
-          EOF
-
-      - name: Build Debug APK
-        run: gradle assembleDebug
-
-      - name: Upload APK Artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: Solana-Live-Wallpaper-APK
-          path: app/build/outputs/apk/debug/app-debug.apk
+             
